@@ -325,8 +325,26 @@ public static partial class DevicesRoutes
             // Sanitized on the way out too, so a layout word another build
             // stored reads as the default rather than reaching the page.
             all.Stacks = Nexus.Service.Common.DeviceGroupList.SanitizeStacks(lighting.DeviceStacks);
+            all.SelectionLocked = lighting.SelectionLockedDevices;
             return all;
         }).AllowPanel();
+
+        app.MapPost("/devices/lighting-devices/selection-lock", (
+            SetSelectionLockBody body,
+            Nexus.Service.Persistence.IConfigStore store,
+            Nexus.Service.Sockets.MultiplexHub hub) =>
+        {
+            if (string.IsNullOrEmpty(body.Id))
+                return Results.Json(ApiResponse.Fail("id required"), Nexus.Service.Serialization.AppJsonContext.Default.ApiResponse, statusCode: 400);
+            store.Update(s =>
+            {
+                var locked = s.Lighting.SelectionLockedDevices;
+                locked.Remove(body.Id);
+                if (body.Locked) locked.Add(body.Id);
+            });
+            Nexus.Service.Sockets.PanelTopics.BroadcastLighting(hub);
+            return Results.Ok(ApiResponse.Ok());
+        });
 
         // Whole-list replace: the page owns group order and membership, so a
         // create, rename, delete or drag all arrive as one PUT.

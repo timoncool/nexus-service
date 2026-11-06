@@ -296,6 +296,8 @@ public class GetLightingDevicesResponse
     public List<Nexus.Service.Persistence.DeviceGroup> Groups { get; set; } = new();
     /// <summary>Cards stacked on one canvas frame and one selection, riding the list the same way.</summary>
     public List<Nexus.Service.Persistence.DeviceGroup> Stacks { get; set; } = new();
+    /// <summary>Card ids the page's Select all leaves out.</summary>
+    public List<string> SelectionLocked { get; set; } = new();
 }
 
 /// <summary>POST /devices/lighting-devices/max-rate. A null <see cref="MaxRateHz"/> removes the cap.</summary>
@@ -329,6 +331,8 @@ public class SetDeviceStacksBody
 {
     public List<Nexus.Service.Persistence.DeviceGroup> Stacks { get; set; } = new();
 }
+
+public class SetSelectionLockBody { public string Id { get; set; } = ""; public bool Locked { get; set; } }
 
 public class SetDisabledLedsBody { public List<string> Devices { get; set; } = new(); }
 public class SetLightingDevicePowerBody { public string Id { get; set; } = ""; public bool On { get; set; } }

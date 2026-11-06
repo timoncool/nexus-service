@@ -846,6 +846,8 @@ public sealed class LightingSettings
     public List<DeviceGroup> DeviceGroups { get; set; } = new();
     /// <summary>Sets of cards stacked on one canvas frame and one selection. Same shape as the groups, no cap; a card is in at most one stack.</summary>
     public List<DeviceGroup> DeviceStacks { get; set; } = new();
+    /// <summary>Cards the Lighting page's Select all leaves out, so a select-all and a pick never rewrite them.</summary>
+    public List<string> SelectionLockedDevices { get; set; } = new();
     /// <summary>
     /// Per-device pins, keyed by lighting-device id. A pinned device shows its
     /// own source in every mode instead of the global one; an unlisted device
