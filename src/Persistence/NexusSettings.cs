@@ -1727,6 +1727,13 @@ public sealed class DevicesSettings
     /// </summary>
     public Dictionary<string, OpenRgbDetectorExclusion> OpenRgbDetectorExclusions { get; set; } = new();
 
+    /// <summary>
+    /// Hidden, no UI. On, an OpenRGB device with Nexus Control off stays detected by the bundled
+    /// daemon instead of being excluded, so another SDK client on its port can drive it while
+    /// Nexus pushes nothing to it. Off (the default) keeps the exclusion behavior.
+    /// </summary>
+    public bool ShareUncontrolledOpenRgbDevices { get; set; }
+
     /// <summary>"{device name}#{same-name ordinal}" -> the "openrgb-N" id a serial- and location-less OpenRGB device first had, kept for good so its settings stay put when the list reorders.</summary>
     public Dictionary<string, string> OpenRgbPinnedIds { get; set; } = new();
 

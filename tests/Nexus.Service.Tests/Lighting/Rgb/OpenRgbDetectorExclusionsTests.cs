@@ -492,6 +492,46 @@ public class OpenRgbDetectorExclusionsTests
         Assert.Empty(delta.UncontrolledAdds);
     }
 
+    [Fact]
+    public void Shared_uncontrolled_device_is_not_excluded()
+    {
+        var settings = new NexusSettings();
+        settings.Devices.ShareUncontrolledOpenRgbDevices = true;
+        settings.Devices.UncontrolledLightingDevices.Add("openrgb-s-K70A");
+
+        var delta = OpenRgbDetectorExclusions.Compute(new[] { Keyboard() }, settings);
+        Assert.True(delta.IsEmpty);
+    }
+
+    [Fact]
+    public void Sharing_releases_an_existing_exclusion_and_keeps_the_device_uncontrolled()
+    {
+        var settings = new NexusSettings();
+        settings.Devices.ShareUncontrolledOpenRgbDevices = true;
+        settings.Devices.UncontrolledLightingDevices.Add("openrgb-s-K70A");
+        settings.Devices.OpenRgbDetectorExclusions["openrgb-s-K70A"] = new OpenRgbDetectorExclusion { DetectorName = "Corsair K70 RGB" };
+
+        var delta = OpenRgbDetectorExclusions.Compute(System.Array.Empty<RgbDevice>(), settings);
+        Assert.Equal(new[] { "openrgb-s-K70A" }, delta.Release);
+        Assert.Empty(delta.Remove);
+
+        OpenRgbDetectorExclusions.Apply(settings, delta);
+        Assert.Empty(settings.Devices.OpenRgbDetectorExclusions);
+        Assert.Equal(new[] { "openrgb-s-K70A" }, settings.Devices.UncontrolledLightingDevices);
+    }
+
+    [Fact]
+    public void Sharing_still_lifts_a_recontrolled_exclusion()
+    {
+        var settings = new NexusSettings();
+        settings.Devices.ShareUncontrolledOpenRgbDevices = true;
+        settings.Devices.OpenRgbDetectorExclusions["openrgb-s-K70A"] = new OpenRgbDetectorExclusion { DetectorName = "Corsair K70 RGB" };
+
+        var delta = OpenRgbDetectorExclusions.Compute(System.Array.Empty<RgbDevice>(), settings);
+        Assert.Equal(new[] { "openrgb-s-K70A" }, delta.Remove);
+        Assert.Empty(delta.Release);
+    }
+
     private static RgbDevice Dimm() => new()
     {
         Index = 0,

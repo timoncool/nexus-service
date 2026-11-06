@@ -1919,7 +1919,7 @@ public sealed class RgbBridge : IDisposable
         }
 
         _store.Update(s => OpenRgbDetectorExclusions.Apply(s, delta));
-        ServiceLog.Info($"[rgb-bridge] detector exclusions changed (+{delta.Add.Count}/-{delta.Remove.Count}), applying");
+        ServiceLog.Info($"[rgb-bridge] detector exclusions changed (+{delta.Add.Count}/-{delta.Remove.Count}/shared {delta.Release.Count}), applying");
         Interlocked.Exchange(ref _lastBounceTicks, DateTime.UtcNow.Ticks);
         Redetect("detector-exclusions", detectorsChanged: true);
     }

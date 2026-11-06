@@ -21,7 +21,9 @@ public static class OpenRgbDetectorExclusions
         public List<string> Remove { get; } = new();
         /// <summary>Base ids appended to the uncontrolled list so a zone-ignored device's synthesized card round-trips its toggle by base id.</summary>
         public List<string> UncontrolledAdds { get; } = new();
-        public bool IsEmpty => Add.Count == 0 && Remove.Count == 0 && UncontrolledAdds.Count == 0;
+        /// <summary>Base ids whose exclusion is dropped while the device stays uncontrolled, so the daemon detects it again for another SDK client.</summary>
+        public List<string> Release { get; } = new();
+        public bool IsEmpty => Add.Count == 0 && Remove.Count == 0 && UncontrolledAdds.Count == 0 && Release.Count == 0;
     }
 
     /// <summary>
@@ -36,7 +38,7 @@ public static class OpenRgbDetectorExclusions
     /// </summary>
     public static void Apply(NexusSettings s, Delta delta)
     {
-        if (delta.Add.Count > 0 || delta.Remove.Count > 0)
+        if (delta.Add.Count > 0 || delta.Remove.Count > 0 || delta.Release.Count > 0)
         {
             var nextExclusions = new Dictionary<string, OpenRgbDetectorExclusion>(s.Devices.OpenRgbDetectorExclusions);
             foreach (var kv in delta.Add)
@@ -44,6 +46,10 @@ public static class OpenRgbDetectorExclusions
                 nextExclusions[kv.Key] = kv.Value;
             }
             foreach (var key in delta.Remove)
+            {
+                nextExclusions.Remove(key);
+            }
+            foreach (var key in delta.Release)
             {
                 nextExclusions.Remove(key);
             }
@@ -182,13 +188,21 @@ public static class OpenRgbDetectorExclusions
         foreach (var kv in exclusions)
         {
             // A held-off controller's card leaves only through ApplyPresence or the user's click (AllowFor), never a preset swap.
-            if (!uncontrolled.Contains(kv.Key) && !OpenRgbGamepadDefaults.IsHeldOffKey(settings, kv.Key))
+            if (OpenRgbGamepadDefaults.IsHeldOffKey(settings, kv.Key))
+            {
+                continue;
+            }
+            if (!uncontrolled.Contains(kv.Key))
             {
                 delta.Remove.Add(kv.Key);
             }
+            else if (settings.Devices.ShareUncontrolledOpenRgbDevices)
+            {
+                delta.Release.Add(kv.Key);
+            }
         }
 
-        if (devices.Count == 0)
+        if (devices.Count == 0 || settings.Devices.ShareUncontrolledOpenRgbDevices)
         {
             return delta;
         }
