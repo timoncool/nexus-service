@@ -59,6 +59,7 @@ public static class PanelPresets
         to.Font = from.Font;
         to.ThemeSyncWithDesktop = from.ThemeSyncWithDesktop;
         to.AccentSyncWithDesktop = from.AccentSyncWithDesktop;
+        to.AccentLightingDevice = from.AccentLightingDevice;
         to.WidgetSize = from.WidgetSize;
         to.GridSlots = from.GridSlots;
     }

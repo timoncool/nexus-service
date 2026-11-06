@@ -814,6 +814,8 @@ public sealed class PanelDeviceRegistry
                 record.ThemeSyncWithDesktop = patch.ThemeSyncWithDesktop.Value;
             if (patch.AccentSyncWithDesktop.HasValue)
                 record.AccentSyncWithDesktop = patch.AccentSyncWithDesktop.Value;
+            if (patch.AccentLightingDevice is not null)
+                record.AccentLightingDevice = patch.AccentLightingDevice.Length == 0 ? null : patch.AccentLightingDevice;
             // Reserve only makes sense for display-bound (promoted monitor)
             // records; the Y70 kiosk uses the global preference.
             if (patch.ReserveMonitor.HasValue && !string.IsNullOrEmpty(record.DisplayId))
@@ -939,6 +941,7 @@ public sealed class PanelDeviceRegistry
             record.Font = null;
             record.ThemeSyncWithDesktop = null;
             record.AccentSyncWithDesktop = null;
+            record.AccentLightingDevice = null;
             record.WidgetSize = null;
             record.GridSlots = null;
             // Presets are personalization too, and they reference the media
@@ -1307,6 +1310,7 @@ public sealed class PanelDeviceRegistry
             Font = r.Font,
             ThemeSyncWithDesktop = r.ThemeSyncWithDesktop,
             AccentSyncWithDesktop = r.AccentSyncWithDesktop,
+            AccentLightingDevice = r.AccentLightingDevice,
             FirstSeenAt = r.FirstSeenAt,
             LastSeenAt = r.LastSeenAt,
             Capabilities = r.Capabilities,

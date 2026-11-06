@@ -96,6 +96,8 @@ public sealed class PanelDeviceRecord : IPanelPersonalization
     public string? Font { get; set; }
     public bool? ThemeSyncWithDesktop { get; set; }
     public bool? AccentSyncWithDesktop { get; set; }
+    /// <summary>Lighting card id whose live LED colour is the accent; null follows the accent settings above.</summary>
+    public string? AccentLightingDevice { get; set; }
     public long FirstSeenAt { get; set; }
     public long LastSeenAt { get; set; }
     public PanelDeviceCapabilities? Capabilities { get; set; }
@@ -294,6 +296,7 @@ public interface IPanelPersonalization
     string? Font { get; set; }
     bool? ThemeSyncWithDesktop { get; set; }
     bool? AccentSyncWithDesktop { get; set; }
+    string? AccentLightingDevice { get; set; }
     /// <summary>Travels with <see cref="Layout"/>: the web re-plans and saves both together.</summary>
     string? WidgetSize { get; set; }
     int? GridSlots { get; set; }
@@ -341,6 +344,7 @@ public sealed class PanelPreset : IAppBoundPreset, IPanelPersonalization
     public string? Font { get; set; }
     public bool? ThemeSyncWithDesktop { get; set; }
     public bool? AccentSyncWithDesktop { get; set; }
+    public string? AccentLightingDevice { get; set; }
     public string? WidgetSize { get; set; }
     public int? GridSlots { get; set; }
 
@@ -469,6 +473,8 @@ public sealed class PanelDevicePatch
     public string? Font { get; set; }
     public bool? ThemeSyncWithDesktop { get; set; }
     public bool? AccentSyncWithDesktop { get; set; }
+    /// <summary>Lighting card id to take the accent from; "" clears it.</summary>
+    public string? AccentLightingDevice { get; set; }
     /// <summary>Display-bound records only; ignored for other panels.</summary>
     public bool? ReserveMonitor { get; set; }
     /// <summary>Display-bound records only; ignored for other panels.</summary>
