@@ -105,6 +105,12 @@ public sealed class BulkPanelConnectionWorker : BackgroundService
                             ServiceLog.Info($"[{driver.HandlerId}] device re-enumerated; reopening");
                             break;
                         }
+                        if (driver.ReopenRequested)
+                        {
+                            ServiceLog.Info($"[{driver.HandlerId}] panel silent after an upload; reopening");
+                            _hub.Release();
+                            break;
+                        }
                         if (driver.GeometryStale && _hub.Renegotiate())
                         {
                             ServiceLog.Info($"[{driver.HandlerId}] renegotiated at {_hub.Width}x{_hub.Height}");

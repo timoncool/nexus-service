@@ -389,10 +389,49 @@ public class HydroShift2Tests
     }
 
     [Fact]
-    public void An_unanswered_ring_upload_is_tried_again_with_a_growing_backoff()
+    public void A_silent_ring_upload_counts_as_delivered_and_asks_for_a_reopen()
+    {
+        var driver = new HydroShift2LcdDriver();
+        var hub = new BulkPanelHub(driver);
+        var pipe = new FirmwarePipe();
+        Assert.True(hub.Attach(pipe, null));
+        var aio = new HydroShift2Aio(hub, driver, _ => false);
+        pipe.Silent = true;
+        aio.SetRing(Solid(255, 0, 0));
+        aio.Tick(10_000);
+
+        Assert.Equal(1, pipe.Commands.Count(c => c == HydroShift2Protocol.CommandPushRgb));
+        Assert.True(driver.ReopenRequested);
+        aio.Tick(15_000);
+        aio.Tick(25_000);
+        Assert.Equal(1, pipe.Commands.Count(c => c == HydroShift2Protocol.CommandPushRgb));
+    }
+
+    [Fact]
+    public void The_reopen_after_a_ring_upload_does_not_send_the_same_ring_again()
+    {
+        var driver = new HydroShift2LcdDriver();
+        var hub = new BulkPanelHub(driver);
+        Assert.True(hub.Attach(new FirmwarePipe { Silent = false }, null));
+        var aio = new HydroShift2Aio(hub, driver, _ => false);
+        aio.SetRing(Solid(255, 0, 0));
+        aio.Tick(10_000);
+        hub.Release();
+        aio.Tick(11_000);
+
+        var pipe = new FirmwarePipe();
+        Assert.True(hub.Attach(pipe, null));
+        Assert.False(driver.ReopenRequested);
+        aio.Tick(20_000);
+
+        Assert.Equal(0, pipe.Commands.Count(c => c == HydroShift2Protocol.CommandPushRgb));
+    }
+
+    [Fact]
+    public void A_failed_ring_write_is_tried_again_with_a_growing_backoff()
     {
         var (aio, pipe) = Attached();
-        pipe.Silent = true;
+        pipe.FailWrites = true;
         aio.SetRing(Solid(255, 0, 0));
         aio.Tick(10_000);
         aio.Tick(14_750);
@@ -401,14 +440,14 @@ public class HydroShift2Tests
         aio.Tick(15_000);
         Assert.Equal(2, pipe.Commands.Count(c => c == HydroShift2Protocol.CommandPushRgb));
 
-        pipe.Silent = false;
+        pipe.FailWrites = false;
         aio.Tick(24_750);
         Assert.Equal(2, pipe.Commands.Count(c => c == HydroShift2Protocol.CommandPushRgb));
         aio.Tick(25_000);
         Assert.Equal(3, pipe.Commands.Count(c => c == HydroShift2Protocol.CommandPushRgb));
 
-        // An answered upload resets the backoff to its first step.
-        pipe.Silent = true;
+        // A delivered upload resets the backoff to its first step.
+        pipe.FailWrites = true;
         aio.SetRing(Solid(0, 255, 0));
         aio.Tick(27_000);
         aio.Tick(31_750);
@@ -421,7 +460,7 @@ public class HydroShift2Tests
     public void Ring_retries_stop_growing_at_the_cap()
     {
         var (aio, pipe) = Attached();
-        pipe.Silent = true;
+        pipe.FailWrites = true;
         aio.SetRing(Solid(255, 0, 0));
         foreach (var t in new[] { 10_000, 15_000, 25_000, 45_000, 85_000, 124_750 })
         {
@@ -631,6 +670,7 @@ public class HydroShift2Tests
         public List<byte[]> Writes { get; } = new();
         public Queue<byte[]> Pending { get; } = new();
         public bool Silent { get; set; }
+        public bool FailWrites { get; set; }
         public int ProductId { get; set; } = HydroShift2Protocol.ProductIdSquare;
 
         public byte[] Commands => Writes.Select(w => Decrypt(w)[0]).ToArray();
@@ -645,6 +685,10 @@ public class HydroShift2Tests
         {
             var packet = data.ToArray();
             Writes.Add(packet);
+            if (FailWrites)
+            {
+                return false;
+            }
             if (!Silent)
             {
                 var command = Decrypt(packet)[0];

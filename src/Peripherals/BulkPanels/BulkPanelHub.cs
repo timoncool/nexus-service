@@ -192,9 +192,18 @@ public sealed class BulkPanelHub : IDisposable
         }
     }
 
-    private void DetachLocked()
+    /// <summary>Closes the pipes without the driver's hand-back, for a panel that answers nothing until it is reopened.</summary>
+    public void Release()
     {
-        if (_pipe is not null)
+        lock (_lock)
+        {
+            DetachLocked(handBack: false);
+        }
+    }
+
+    private void DetachLocked(bool handBack = true)
+    {
+        if (handBack && _pipe is not null)
         {
             try { _driver.Disconnect(_pipe, _hid); }
             catch { /* the panel is usually already gone */ }

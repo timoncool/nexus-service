@@ -25,6 +25,7 @@ public sealed class HydroShift2LcdDriver : IBulkPanelDriver
     private readonly Stopwatch _clock = new();
     private uint _lastTimestamp;
     private BgraJpegEncoder? _jpeg;
+    private volatile bool _reopen;
 
     /// <summary>The last pump/fan write was a Nexus-driven target, so disconnecting must hand back the defaults.</summary>
     private bool _handBack;
@@ -61,6 +62,7 @@ public sealed class HydroShift2LcdDriver : IBulkPanelDriver
 
     public (int Width, int Height)? Connect(IBulkUsbPipe pipe, IHidDevice? hid)
     {
+        _reopen = false;
         _round = pipe.ProductId == HydroShift2Protocol.ProductIdCircle;
         _identified = true;
         _clock.Restart();
@@ -152,10 +154,23 @@ public sealed class HydroShift2LcdDriver : IBulkPanelDriver
         Exchange(pipe, HydroShift2Protocol.CommandPushPng, HydroShift2Protocol.EncodeImage(
             HydroShift2Protocol.CommandPushPng, HydroShift2Protocol.EmptyOverlayPng(), NextTimestamp())) is not null;
 
-    /// <summary>Uploads a ring animation (packed RGB frames) for the firmware to loop. Call only under the hub's lock.</summary>
-    public bool PushRing(IBulkUsbPipe pipe, ReadOnlySpan<byte> frames, int frameCount, byte intervalTicks) =>
-        Exchange(pipe, HydroShift2Protocol.CommandPushRgb,
-            HydroShift2Protocol.EncodeRing(frames, frameCount, intervalTicks, NextTimestamp())) is not null;
+    /// <summary>
+    /// Uploads a ring animation (packed RGB frames) for the firmware to loop. The panel stops
+    /// answering after the upload until its pipe is reopened (lcd207 ReInitDev), so a written
+    /// upload counts as delivered and asks the worker for that reopen. Call only under the hub's lock.
+    /// </summary>
+    public bool PushRing(IBulkUsbPipe pipe, ReadOnlySpan<byte> frames, int frameCount, byte intervalTicks)
+    {
+        if (!pipe.Write(HydroShift2Protocol.EncodeRing(frames, frameCount, intervalTicks, NextTimestamp())))
+        {
+            return false;
+        }
+        ReadReply(pipe, HydroShift2Protocol.CommandPushRgb);
+        _reopen = true;
+        return true;
+    }
+
+    public bool ReopenRequested => _reopen;
 
     private bool Command(IBulkUsbPipe pipe, byte command, ReadOnlySpan<byte> parameters) =>
         Exchange(pipe, command, HydroShift2Protocol.EncodeCommand(command, parameters, NextTimestamp())) is not null;

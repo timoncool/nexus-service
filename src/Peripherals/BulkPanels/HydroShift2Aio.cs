@@ -45,6 +45,8 @@ public sealed class HydroShift2Aio : BackgroundService
     private byte[]? _sentFans;
     private bool _pumpFanDirty;
     private byte[]? _ring;
+    // The upload the firmware already loops; a reopen after an upload must not send it again.
+    private byte[]? _ringApplied;
     private int _ringFrames;
     private byte _ringInterval;
     private bool _ringDirty;
@@ -247,6 +249,10 @@ public sealed class HydroShift2Aio : BackgroundService
                 {
                     _wirelessHeld = false;
                     _ringHoldUntil = now + RingAfterWirelessHoldMs;
+                    lock (_lock)
+                    {
+                        _ringApplied = null;
+                    }
                 }
             }
             RaiseAvailabilityChanged();
@@ -312,11 +318,19 @@ public sealed class HydroShift2Aio : BackgroundService
             frames = _ringFrames;
             interval = _ringInterval;
             _ringDirty = false;
+            if (ReferenceEquals(_ringApplied, ring))
+            {
+                return;
+            }
         }
         _lastRingAt = now;
         if (_hub.Exchange(pipe => _driver.PushRing(pipe, ring, frames, interval), false))
         {
             _ringRetryMs = 0;
+            lock (_lock)
+            {
+                _ringApplied = ring;
+            }
             return;
         }
         // Retrying while the firmware still ignores uploads keeps the glass stalled, so back off.
