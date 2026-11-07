@@ -3195,7 +3195,7 @@ public sealed partial class Slv3Hub : IDisposable
         string macHex, byte[] frames, int ledCount, int frameCount, double intervalTicks, int brightnessPercent)
     {
         var raw = Slv3RgbFrame.BuildFrameBuffer(frames, brightnessPercent);
-        if (!TryPrepareUpload(macHex, raw, ledCount, frameCount, intervalTicks, window: true, out var channel, out var rxType, out var packets, out _))
+        if (!TryPrepareUpload(macHex, raw, ledCount, frameCount, intervalTicks, window: true, out var channel, out var rxType, out var packets, out var windowEffect))
         {
             return false;
         }
@@ -3226,6 +3226,7 @@ public sealed partial class Slv3Hub : IDisposable
                     }
                 }
                 NoteConfigChangedLocked();
+                NoteEffectSent(macHex, windowEffect);
             }
             // The late passes' cost is booked at decision time so a concurrent
             // upload's check already sees it; the passes themselves are not re-counted.
