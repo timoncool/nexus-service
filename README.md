@@ -29,6 +29,19 @@ Nexus Fast is a fork of [Nexus](https://github.com/hello-nexus/nexus) (service a
 - **OpenRGB device hand-off** — Nexus answers the OpenRGB SDK port and gives a chosen device to another app (Aurora, SignalRGB…); each app sees only its own
 - **Select-all lock** — keep a lighting card out of Select all
 
+## Works with Aurora
+
+Nexus Fast plays well with [Aurora](https://github.com/Aurora-RGB/Aurora) (tested on v384). From a lighting card's menu, hand the keyboard and mouse to Aurora ("Give to Aurora (RGB.NET)"). Aurora then sees and drives only those, and Nexus drives the rest: fans, pump, memory, motherboard, monitor. Nobody overwrites anybody's colours, and Aurora spends no time on devices that are not its own.
+
+The author's Aurora desktop profile is included, cleaned up and checked — [extras/aurora/nexus-fast-desktop.json](extras/aurora/nexus-fast-desktop.json):
+- an audio equalizer on the main block and on the numpad;
+- Ctrl / Win / Alt shortcut hints;
+- particles and key-press fade;
+- letters blinking while Caps Lock is on;
+- two-zone breathing background.
+
+To install: close Aurora, put the file into `%APPDATA%\Aurora\Profiles\desktop\`, start Aurora and pick "Nexus Fast Desktop" among the desktop profiles.
+
 ## Numbers
 
 Measured on one PC (Ryzen 9 9950X3D, RTX 4090, Lian Li TL / TL LCD wireless, HydroShift II LCD-C), before and after:
