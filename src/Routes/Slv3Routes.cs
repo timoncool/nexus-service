@@ -25,6 +25,12 @@ public sealed class Slv3ChannelRequest
     public int? Channel { get; set; }
 }
 
+public sealed class Slv3RadioTuningRequest
+{
+    public int? RgbFrameTicks { get; set; }
+    public int? LateAirBudget { get; set; }
+}
+
 public sealed class Slv3LightingModeDto
 {
     public string Key { get; set; } = "";
@@ -269,12 +275,31 @@ public static partial class Slv3Routes
 
         // PUT /devices/lianli-wireless/channel - move the dongle and every chain bound to it to another RF channel
         // (L-Connect SwitchChannel): 8, or an odd channel 1..39; channel k sits at 2402 + 2k MHz.
-        app.MapPut("/devices/lianli-wireless/channel", (Slv3ChannelRequest body, Slv3Hub hub) =>
+        app.MapPut("/devices/lianli-wireless/channel", (Slv3ChannelRequest body, Slv3Hub hub, IConfigStore store) =>
         {
             if (body.Channel is not { } channel || !hub.SetChannel(channel))
             {
                 return Results.BadRequest(ApiResponse.Fail("channel must be 8 or odd 1..39"));
             }
+            store.Update(settings => settings.Devices.LianLiWireless.Channel = channel == Slv3Protocol.DefaultChannel ? null : channel);
+            return Results.Json(ApiResponse.Ok(), AppJsonContext.Default.ApiResponse);
+        });
+
+        // PUT /devices/lianli-wireless/radio-tuning - rolling RGB window frame length (RF ticks) and late-pass air budget; applied live.
+        app.MapPut("/devices/lianli-wireless/radio-tuning", (Slv3RadioTuningRequest body, Slv3Hub hub, IConfigStore store) =>
+        {
+            if (body.RgbFrameTicks is null && body.LateAirBudget is null)
+            {
+                return Results.BadRequest(ApiResponse.Fail("rgbFrameTicks or lateAirBudget is required"));
+            }
+            var frameTicks = body.RgbFrameTicks is { } f ? Math.Clamp(f, Nexus.Service.Lighting.Slv3LightingFrameWriter.MinWindowIntervalTicks, Nexus.Service.Lighting.Slv3LightingFrameWriter.MaxWindowIntervalTicks) : (int?)null;
+            if (body.LateAirBudget is { } budget) hub.LateAirBudget = budget;
+            store.Update(settings =>
+            {
+                if (frameTicks is { } t) settings.Devices.LianLiWireless.RgbFrameTicks = t;
+                if (body.LateAirBudget is not null) settings.Devices.LianLiWireless.LateAirBudget = hub.LateAirBudget;
+            });
+            if (frameTicks is { } ticks) hub.State.RgbFrameTicks = ticks;
             return Results.Json(ApiResponse.Ok(), AppJsonContext.Default.ApiResponse);
         });
 

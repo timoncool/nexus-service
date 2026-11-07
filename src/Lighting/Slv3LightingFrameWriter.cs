@@ -153,6 +153,7 @@ public sealed class Slv3LightingFrameWriter : IHostedService, IDisposable
             return;
         }
         var settings = _store.Load();
+        ApplyWindowTiming(settings.Devices.LianLiWireless.RgbFrameTicks);
         // A chain on its motherboard input has no engine cards, so this runs before the device check.
         ReconcileMotherboardArgb(settings, _nowTicks() / TimeSpan.TicksPerMillisecond);
 
@@ -280,13 +281,30 @@ public sealed class Slv3LightingFrameWriter : IHostedService, IDisposable
     }
 
     // Rolling windows. Longer loops hitched the chain's frame decoder; one frame
-    // lasts two engine frames in RF clock ticks: at one, a handful of chains
-    // uploading together outruns what the 1 Mbps link carries; the upload
-    // period stays under half a window so one lost upload is still covered.
+    // lasts the user's RgbFrameTicks (53 = one engine frame; longer frames
+    // spend less of the 1 Mbps link); the upload period stays under half a
+    // window so one lost upload is still covered.
     internal const int WindowFrames = 30;
-    internal const int WindowIntervalTicks = 106;
-    private const int WindowPeriodMs = 900;
-    private const int PendingTimeoutMs = 3 * WindowPeriodMs;
+    internal const int MinWindowIntervalTicks = 53;
+    internal const int MaxWindowIntervalTicks = 212;
+    private const double NominalTicksPerMs = 1.6;
+    private int _windowIntervalTicks = MinWindowIntervalTicks;
+    private int WindowPeriodMs => (int)(WindowFrames * _windowIntervalTicks / NominalTicksPerMs * 0.45);
+    private int PendingTimeoutMs => 3 * WindowPeriodMs;
+
+    // A new frame length re-cuts the RF frame grid, so every window built on the old one is dropped and chains stream live until the next upload.
+    private void ApplyWindowTiming(int frameTicks)
+    {
+        var ticks = Math.Clamp(frameTicks, MinWindowIntervalTicks, MaxWindowIntervalTicks);
+        if (ticks == _windowIntervalTicks) return;
+        _windowIntervalTicks = ticks;
+        DropSharedWindow();
+        foreach (var st in _rolling.Values)
+        {
+            st.WindowFirstFrame = long.MinValue;
+            st.UploadedWindowId = -1;
+        }
+    }
     // Live frames until a chain's brightness, prefs or power have settled, so a
     // window never bakes a change in late.
     private const int StateSettleMs = 300;
@@ -367,12 +385,12 @@ public sealed class Slv3LightingFrameWriter : IHostedService, IDisposable
     }
 
     /// <summary>Wall-clock ms at the middle of each window frame, first frame <paramref name="firstFrame"/>.</summary>
-    internal static long[] WindowTickTimes(double a, double b, long firstFrame)
+    internal static long[] WindowTickTimes(double a, double b, long firstFrame, int intervalTicks)
     {
         var ticks = new long[WindowFrames];
         for (var k = 0; k < WindowFrames; k++)
         {
-            ticks[k] = (long)Math.Round(((firstFrame + k + 0.5) * WindowIntervalTicks - a) / b);
+            ticks[k] = (long)Math.Round(((firstFrame + k + 0.5) * intervalTicks - a) / b);
         }
         return ticks;
     }
@@ -384,7 +402,7 @@ public sealed class Slv3LightingFrameWriter : IHostedService, IDisposable
     {
         frame = 0;
         if (!TryFitClock(_clock, out var a, out var b)) return false;
-        frame = (long)Math.Floor((a + b * nowMs) / WindowIntervalTicks);
+        frame = (long)Math.Floor((a + b * nowMs) / _windowIntervalTicks);
         return true;
     }
 
@@ -469,12 +487,12 @@ public sealed class Slv3LightingFrameWriter : IHostedService, IDisposable
         SampleClock(nowMs);
         if (_windowPending is not null || nowMs < _nextWindowRequestMs) return;
         if (!TryFitClock(_clock, out var a, out var b)) return;
-        _windowPendingFirstFrame = (long)Math.Floor((a + b * nowMs) / WindowIntervalTicks) + WindowLeadFrames;
+        _windowPendingFirstFrame = (long)Math.Floor((a + b * nowMs) / _windowIntervalTicks) + WindowLeadFrames;
         _windowRequestedAtMs = nowMs;
         _nextWindowRequestMs = nowMs + WindowPeriodMs;
         var ids = new string[_rollingIds.Count];
         _rollingIds.CopyTo(ids);
-        _windowPending = _engine.RequestAhead(ids, WindowTickTimes(a, b, _windowPendingFirstFrame));
+        _windowPending = _engine.RequestAhead(ids, WindowTickTimes(a, b, _windowPendingFirstFrame, _windowIntervalTicks));
     }
 
     private void DropSharedWindow()
@@ -568,7 +586,8 @@ public sealed class Slv3LightingFrameWriter : IHostedService, IDisposable
                 st.UploadPayload = payload;
                 st.UploadLedCount = ledCount;
                 // Off the writer thread, so other chains keep streaming while the upload runs.
-                st.Upload = Task.Run(() => _hub.SendRgbWindowAsync(macHex, payload, ledCount, WindowFrames, WindowIntervalTicks, PassThroughBrightnessPercent));
+                var intervalTicks = _windowIntervalTicks;
+                st.Upload = Task.Run(() => _hub.SendRgbWindowAsync(macHex, payload, ledCount, WindowFrames, intervalTicks, PassThroughBrightnessPercent));
                 return true;
             }
         }

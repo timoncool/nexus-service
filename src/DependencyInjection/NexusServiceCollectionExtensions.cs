@@ -1263,6 +1263,9 @@ public static class NexusServiceCollectionExtensions
             hub.OwnedDevicesLoad = () => store.Load().Devices.LianLiWireless.OwnedDevices;
             hub.LockBoundDevices = () => store.Load().Devices.LianLiWireless.LockBoundDevices;
             hub.AirCount.SetEnabled(store.Load().Devices.LianLiWireless.AirCount);
+            hub.LateAirBudget = store.Load().Devices.LianLiWireless.LateAirBudget;
+            if (store.Load().Devices.LianLiWireless.Channel is { } startChannel) hub.SetStartChannel(startChannel);
+            hub.State.RgbFrameTicks = store.Load().Devices.LianLiWireless.RgbFrameTicks;
             hub.OwnedDevicesSave = owned => store.Update(settings =>
                 settings.Devices.LianLiWireless.OwnedDevices = new Dictionary<string, int>(owned, StringComparer.Ordinal));
             // Resolved on first use: the USB AIO service itself depends on this hub.

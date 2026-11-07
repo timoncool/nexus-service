@@ -248,10 +248,13 @@ public sealed partial class Slv3Hub : IDisposable
 
     // A reply opening with 0 is the RX's "no device list this cycle". It does
     // this on its own every ~17 s for a few seconds and recovers without help,
-    // so only a busy spell this long is treated as a wedge. A wedge gets a fresh
-    // RX handle, never UsbResetAnother: the reset re-enumerates the RX, a Windows
-    // device sound each time.
+    // so only a busy spell this long is treated as a wedge. A wedge first gets a
+    // fresh RX handle; a fresh handle does not clear a wedged RX MCU (it stays
+    // busy for many minutes), so a wedge that outlives one reopen is reset
+    // through the TX like lian-li-linux does, at the cost of one Windows device
+    // sound for the re-enumeration.
     private const int RxBusyPollsBeforeReset = 60;
+    private const int RxBusyReopensBeforeReset = 1;
     private int _rxBusyStreak;
     private byte[]? _firstBusyReply;
 
@@ -389,9 +392,22 @@ public sealed partial class Slv3Hub : IDisposable
     // RF payloads per second the late passes may bring the TX up to. The TX
     // accepts writes far faster than the air carries them and drops the excess:
     // two chains sustaining 258/s lost every window, 193/s landed (Y70 USBPcap,
-    // 2026-10-04). The budget stays well under that, since the uploads' own
-    // passes burst above it.
-    private const int LatePassAirBudgetPerSecond = 120;
+    // 2026-10-04). Late passes are the only resend of a lost data part; the
+    // budget is the user's LateAirBudget, held under the rate that landed.
+    internal const int MinLateAirBudget = 60;
+    internal const int MaxLateAirBudget = 190;
+    private volatile int _lateAirBudget = 180;
+
+    /// <summary>RF payloads a second the late passes may bring the TX up to.</summary>
+    public int LateAirBudget
+    {
+        get => _lateAirBudget;
+        set
+        {
+            _lateAirBudget = Math.Clamp(value, MinLateAirBudget, MaxLateAirBudget);
+            State.LateAirBudget = _lateAirBudget;
+        }
+    }
     private const int AirRateWindowMs = 1000;
     private readonly Queue<long> _airSendsMs = new();
 
@@ -2438,7 +2454,8 @@ public sealed partial class Slv3Hub : IDisposable
             return true;
         }
         var first = _firstBusyReply is { } b ? Convert.ToHexString(b, 0, Math.Min(b.Length, Slv3Protocol.UsbPacketSize)) : "";
-        return BeginRxRecoveryLocked($"{RxBusyPollsBeforeReset} consecutive busy GetDev replies (first {first})", resetViaTx: false);
+        return BeginRxRecoveryLocked($"{RxBusyPollsBeforeReset} consecutive busy GetDev replies (first {first})",
+            resetViaTx: _rxRecoveries >= RxBusyReopensBeforeReset);
     }
 
     // Only a good reply clears the busy and failure streaks, so an RX that
@@ -3157,7 +3174,7 @@ public sealed partial class Slv3Hub : IDisposable
             var latePasses = 0;
             lock (_lock)
             {
-                if (RecentAirSendsLocked() + lateCost <= LatePassAirBudgetPerSecond)
+                if (RecentAirSendsLocked() + lateCost <= _lateAirBudget)
                 {
                     latePasses = WindowLatePasses;
                     var now = _nowMs();
@@ -3479,10 +3496,27 @@ public sealed partial class Slv3Hub : IDisposable
         }
     }
 
+    internal static bool IsValidChannel(int channel) =>
+        channel == Slv3Protocol.DefaultChannel || (channel >= 1 && channel <= 39 && channel % 2 == 1);
+
+    /// <summary>The channel the first connect probes and binds on, before any device is known; sends nothing.</summary>
+    public void SetStartChannel(int channel)
+    {
+        if (!IsValidChannel(channel))
+        {
+            return;
+        }
+        lock (_lock)
+        {
+            _channel = (byte)channel;
+            State.Channel = channel;
+        }
+    }
+
     /// <summary>Sets our operating channel; must be the default or an odd value (firmware rejects even). Every device bound to us is retargeted at once.</summary>
     public bool SetChannel(int channel)
     {
-        if (channel != Slv3Protocol.DefaultChannel && (channel < 1 || channel > 39 || channel % 2 == 0))
+        if (!IsValidChannel(channel))
         {
             return false;
         }

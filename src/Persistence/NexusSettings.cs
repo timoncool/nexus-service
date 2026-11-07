@@ -1952,6 +1952,15 @@ public sealed class LianLiWirelessSettings
     /// <summary>Counts the RF payloads sent to the dongle for the device page and the service log. Off by default.</summary>
     public bool AirCount { get; set; }
 
+    /// <summary>RF channel picked on the device page; the hub starts on it, so a restart does not walk every chain back to the default 8. Null = default.</summary>
+    public int? Channel { get; set; }
+
+    /// <summary>Length of one frame of a rolling RGB window in RF clock ticks (53 = 30 fps, 106 = 15 fps); longer frames spend less air.</summary>
+    public int RgbFrameTicks { get; set; } = 53;
+
+    /// <summary>RF payloads a second the late resend passes may fill the air up to.</summary>
+    public int LateAirBudget { get; set; } = 180;
+
     /// <summary>SL-INF Flex chains (MAC hex, uppercase) whose saved zone data was moved to the Center / Inner / Outer split.</summary>
     public List<string> FlexZonesMigrated { get; set; } = new();
 

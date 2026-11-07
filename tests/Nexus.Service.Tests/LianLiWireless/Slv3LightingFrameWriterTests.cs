@@ -29,18 +29,21 @@ public class Slv3LightingFrameWriterTests
         Assert.False(Slv3LightingFrameWriter.TryFitClock(fast, out _, out _));
     }
 
-    [Fact]
-    public void WindowTickTimes_render_each_slot_at_the_middle_of_the_frame_it_plays()
+    [Theory]
+    [InlineData(Slv3LightingFrameWriter.MinWindowIntervalTicks)]
+    [InlineData(106)]
+    [InlineData(Slv3LightingFrameWriter.MaxWindowIntervalTicks)]
+    public void WindowTickTimes_render_each_slot_at_the_middle_of_the_frame_it_plays(int intervalTicks)
     {
         const double A = 12_345, B = 1.6003;
         const long FirstFrame = 987_654;
-        var ticks = Slv3LightingFrameWriter.WindowTickTimes(A, B, FirstFrame);
+        var ticks = Slv3LightingFrameWriter.WindowTickTimes(A, B, FirstFrame, intervalTicks);
 
         Assert.Equal(Slv3LightingFrameWriter.WindowFrames, ticks.Length);
         var slots = new HashSet<int>();
         for (var k = 0; k < ticks.Length; k++)
         {
-            var frame = (long)Math.Floor((A + B * ticks[k]) / Slv3LightingFrameWriter.WindowIntervalTicks);
+            var frame = (long)Math.Floor((A + B * ticks[k]) / intervalTicks);
             Assert.Equal(FirstFrame + k, frame);
             slots.Add(Slv3LightingFrameWriter.WindowSlot(frame));
         }

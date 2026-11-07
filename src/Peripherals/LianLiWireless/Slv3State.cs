@@ -31,6 +31,10 @@ public sealed class Slv3State
     /// <summary>Whether the air count runs (it also writes each minute to the service log). Persisted, default off.</summary>
     public bool AirCount { get; set; }
 
+    /// <summary>Radio tuning: rolling RGB window frame length in RF ticks and the late-pass air budget. Persisted.</summary>
+    public int RgbFrameTicks { get; set; } = 53;
+    public int LateAirBudget { get; set; } = 180;
+
     /// <summary>
     /// Why the link is down, for the device page's disconnected state. One of
     /// <see cref="Slv3LinkStatus"/>. Only a connect attempt writes it, so it
