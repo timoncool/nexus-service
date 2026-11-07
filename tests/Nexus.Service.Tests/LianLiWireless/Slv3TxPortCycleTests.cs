@@ -76,6 +76,65 @@ public partial class Slv3HubTests
         Assert.NotEmpty(cycler.Cycled);
     }
 
+    // An RX that answers busy forever with a TX that keeps answering its probes.
+    private (Slv3Hub Hub, ManualClock Clock, FakeRxTransport Rx, FakeTxPortCycler Cycler) DeafRxHub()
+    {
+        var clock = new ManualClock();
+        var net = new FakeSlv3Network();
+        var tx = new FakeTxTransport(net);
+        var rx = new FakeRxTransport(net);
+        var cycler = new FakeTxPortCycler();
+        var hub = new Slv3Hub(new FakeDiscovery(), port => port.Role == Slv3DongleRole.Tx ? tx : rx, clock.NowMs)
+        {
+            ConfirmNewChains = false,
+            RunPortCycle = work => work(),
+            TxPortCycler = cycler,
+        };
+        hub.OnDisplayState(1);
+        Assert.True(hub.EnsureConnected());
+        net.Fans.Add(new SimulatedFan { Mac = FanMac });
+        Assert.True(hub.DriveTick());
+        return (hub, clock, rx, cycler);
+    }
+
+    private static void BusyMinutes(Slv3Hub hub, ManualClock clock, int minutes)
+    {
+        for (var m = 0; m < minutes * 3; m++)
+        {
+            clock.AdvanceMs(20_000);
+            for (var i = 0; i < 60; i++) hub.PollTick();
+        }
+    }
+
+    [Fact]
+    public void An_rx_deaf_through_tx_resets_gets_the_tx_port_cycled()
+    {
+        var (hub, clock, rx, cycler) = DeafRxHub();
+        rx.BusyReads = true;
+
+        BusyMinutes(hub, clock, 1);
+        Assert.Empty(cycler.Cycled);
+
+        BusyMinutes(hub, clock, 4);
+        Assert.Single(cycler.Cycled);
+    }
+
+    [Fact]
+    public void An_rx_that_hears_devices_again_on_its_own_is_never_cycled()
+    {
+        var (hub, clock, rx, cycler) = DeafRxHub();
+        for (var spell = 0; spell < 10; spell++)
+        {
+            rx.BusyReads = true;
+            for (var i = 0; i < 40; i++) hub.PollTick();
+            rx.BusyReads = false;
+            clock.AdvanceMs(17_000);
+            hub.PollTick();
+        }
+        Assert.Empty(cycler.Cycled);
+        Assert.DoesNotContain(rx.SentFrames, f => f.Length >= 1 && f[0] == Slv3Protocol.UsbResetAnother);
+    }
+
     [Fact]
     public void A_transient_never_qualifies_for_a_port_cycle()
     {
