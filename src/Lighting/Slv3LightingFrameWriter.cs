@@ -77,6 +77,28 @@ public sealed class Slv3LightingFrameWriter : IHostedService, IDisposable
     // queued - the next eligible tick sends whatever is current.
     private readonly Dictionary<string, long> _lastPushTicks = new();
 
+    // A chain whose stream breaks plays the effect stored in its flash, by default the firmware rainbow. Each chain's
+    // stored effect is kept as one static frame of the average colour it plays, so a dropout holds that colour instead.
+    private sealed class FallbackColour
+    {
+        public double R, G, B;
+        public int Windows;
+    }
+
+    private readonly Dictionary<string, FallbackColour> _windowAverage = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, RgbColor> _savedFallback = new(StringComparer.Ordinal);
+    private (string Effect, int Pins)? _look;
+    private (string Effect, int Pins)? _savedLook;
+    private double _lastFallbackSaveMs = double.MinValue;
+    private long? _fallbackSaveHubMs;
+    private double _lookSinceMs;
+    internal const int FallbackWindows = 2;
+    // A look is averaged only once it has played this long: a start or a switch fades in first.
+    internal const double FallbackSettleMs = 15_000;
+    internal const double FallbackMinIntervalMs = 20_000;
+    internal const double FallbackDriftIntervalMs = 30 * 60_000;
+    internal const double FallbackDriftDistance = 40;
+
     public Slv3LightingFrameWriter(
         LightingEngine engine, Slv3Hub hub, IConfigStore store, Np50IdentifyTracker identify, Slv3LightingDeviceProvider provider,
         Func<long>? nowTicks = null, FeatureGates? gates = null)
@@ -150,6 +172,9 @@ public sealed class Slv3LightingFrameWriter : IHostedService, IDisposable
             _clock.Clear();
             DropSharedWindow();
             _argbRequests.Clear();
+            _windowAverage.Clear();
+            _savedFallback.Clear();
+            _savedLook = null;
             return;
         }
         var settings = _store.Load();
@@ -247,6 +272,7 @@ public sealed class Slv3LightingFrameWriter : IHostedService, IDisposable
         }
 
         RequestSharedWindow(nowMs);
+        MaybeSaveFallbacks(nowMs);
 
         // Chains that left rolling this tick (preset, uncontrolled, gone) forget their window.
         List<string>? idle = null;
@@ -585,6 +611,7 @@ public sealed class Slv3LightingFrameWriter : IHostedService, IDisposable
                 st.UploadFirstFrame = _windowFirstFrame;
                 st.UploadPayload = payload;
                 st.UploadLedCount = ledCount;
+                NoteWindowAverage(macHex, payload, nowMs);
                 // Off the writer thread, so other chains keep streaming while the upload runs.
                 var intervalTicks = _windowIntervalTicks;
                 st.Upload = Task.Run(() => _hub.SendRgbWindowAsync(macHex, payload, ledCount, WindowFrames, intervalTicks, PassThroughBrightnessPercent));
@@ -636,6 +663,128 @@ public sealed class Slv3LightingFrameWriter : IHostedService, IDisposable
             _lastSent[macHex] = (ComputeHash(colors), effectIndexHex);
             _lastPushTicks[macHex] = _nowTicks();
         }
+    }
+
+    private static readonly double[] SrgbToLinear = BuildSrgbToLinear();
+
+    private static double[] BuildSrgbToLinear()
+    {
+        var table = new double[256];
+        for (var i = 0; i < table.Length; i++)
+        {
+            var c = i / 255.0;
+            table[i] = c <= 0.04045 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
+        }
+        return table;
+    }
+
+    private static byte LinearToSrgb(double linear)
+    {
+        linear = Math.Clamp(linear, 0, 1);
+        var c = linear <= 0.0031308 ? linear * 12.92 : 1.055 * Math.Pow(linear, 1 / 2.4) - 0.055;
+        return (byte)Math.Round(c * 255);
+    }
+
+    // Averaged in linear light, so a mix of colours keeps its brightness. A new look restarts the average.
+    private void NoteWindowAverage(string macHex, byte[] payload, double nowMs)
+    {
+        var n = payload.Length / 3;
+        if (n == 0 || _engine.Blackout || _engine.BlackoutReleasing || nowMs - _lookSinceMs < FallbackSettleMs) return;
+        double r = 0, g = 0, b = 0;
+        for (var o = 0; o < n * 3; o += 3)
+        {
+            r += SrgbToLinear[payload[o]];
+            g += SrgbToLinear[payload[o + 1]];
+            b += SrgbToLinear[payload[o + 2]];
+        }
+        if (!_windowAverage.TryGetValue(macHex, out var avg))
+        {
+            avg = new FallbackColour();
+            _windowAverage[macHex] = avg;
+        }
+        // Until FallbackWindows have passed each window replaces the last: the first after a change may still be the old look.
+        var weight = avg.Windows < FallbackWindows ? 1.0 : 0.3;
+        avg.R += (r / n - avg.R) * weight;
+        avg.G += (g / n - avg.G) * weight;
+        avg.B += (b / n - avg.B) * weight;
+        avg.Windows++;
+    }
+
+    private static RgbColor ColourOf(FallbackColour avg) => new(LinearToSrgb(avg.R), LinearToSrgb(avg.G), LinearToSrgb(avg.B));
+
+    private static double Distance(RgbColor a, RgbColor b)
+    {
+        double dr = a.R - b.R, dg = a.G - b.G, db = a.B - b.B;
+        return Math.Sqrt(dr * dr + dg * dg + db * db);
+    }
+
+    // SaveCfg is one broadcast that stores whatever every chain plays at that moment, so all rolling chains get their
+    // static frame first and the save follows; the windows resume on the next upload.
+    private void MaybeSaveFallbacks(double nowMs)
+    {
+        var look = (_engine.CurrentEffectName, _engine.Pins?.Version ?? 0);
+        if (_look != look || _engine.Blackout || _engine.BlackoutReleasing)
+        {
+            _look = look;
+            _lookSinceMs = nowMs;
+            foreach (var avg in _windowAverage.Values) avg.Windows = 0;
+        }
+        if (_fallbackSaveHubMs is { } ours && _hub.LastSaveSentMs != ours)
+        {
+            // A save of another kind stored what the chains played then.
+            _savedFallback.Clear();
+            _savedLook = null;
+            _fallbackSaveHubMs = null;
+        }
+        if (_rolling.Count == 0 || nowMs - _lastFallbackSaveMs < FallbackMinIntervalMs) return;
+
+        var due = _savedLook != look;
+        var drifted = false;
+        foreach (var (mac, st) in _rolling)
+        {
+            if (st.Upload is { IsCompleted: false } || st.WindowLedCount <= 0
+                || !_windowAverage.TryGetValue(mac, out var avg) || avg.Windows < FallbackWindows)
+            {
+                return;
+            }
+            if (!_savedFallback.TryGetValue(mac, out var saved))
+            {
+                due = true;
+            }
+            else if (Distance(saved, ColourOf(avg)) > FallbackDriftDistance)
+            {
+                drifted = true;
+            }
+        }
+        if (!due && !(drifted && nowMs - _lastFallbackSaveMs >= FallbackDriftIntervalMs)) return;
+
+        _lastFallbackSaveMs = nowMs;
+        var colours = new List<(string Mac, RgbColor Colour)>(_rolling.Count);
+        foreach (var (mac, st) in _rolling)
+        {
+            var colour = ColourOf(_windowAverage[mac]);
+            var leds = new RgbColor[st.WindowLedCount];
+            Array.Fill(leds, colour);
+            if (!_hub.SendRgbFrame(mac, leds, PassThroughBrightnessPercent, IntervalMs, out _))
+            {
+                return;
+            }
+            colours.Add((mac, colour));
+        }
+        if (!_hub.SaveConfigNow("fallback colour"))
+        {
+            return;
+        }
+        _fallbackSaveHubMs = _hub.LastSaveSentMs;
+        _savedLook = look;
+        foreach (var (mac, colour) in colours)
+        {
+            _savedFallback[mac] = colour;
+            _rolling[mac].WindowFirstFrame = long.MinValue;
+            _lastSent.Remove(mac);
+        }
+        Nexus.Service.Platform.ServiceLog.Info("[lianli-wireless-lighting-writer] fallback colour saved: "
+            + string.Join(", ", colours.ConvertAll(c => $"{c.Mac} #{c.Colour.R:X2}{c.Colour.G:X2}{c.Colour.B:X2}")));
     }
 
     private bool CoversChain(List<string> ids)

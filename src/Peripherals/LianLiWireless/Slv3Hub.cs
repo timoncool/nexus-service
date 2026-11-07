@@ -2199,6 +2199,27 @@ public sealed partial class Slv3Hub : IDisposable
         return true;
     }
 
+    /// <summary>Writes what every chain plays now to its flash, outside the change throttle.</summary>
+    public bool SaveConfigNow(string reason)
+    {
+        lock (_lock)
+        {
+            return SendSaveCfgLocked(reason);
+        }
+    }
+
+    /// <summary>When the last SaveCfg went out, by this hub's clock; null before the first.</summary>
+    public long? LastSaveSentMs
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _lastSaveSentMs;
+            }
+        }
+    }
+
     private bool SendSaveCfgLocked(string reason)
     {
         if (_tx is null)
