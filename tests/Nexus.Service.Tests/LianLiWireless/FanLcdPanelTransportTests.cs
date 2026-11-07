@@ -54,4 +54,27 @@ public class FanLcdPanelTransportTests
         transport.Write(frame);
         Assert.Equal(3, screens.Pushes);
     }
+
+    [Fact]
+    public void A_screen_the_overlay_stops_feeding_still_gets_the_last_frame_every_starvation_interval()
+    {
+        var screens = new FakeScreens();
+        long now = 0;
+        using var transport = new FanLcdPanelTransport(screens, "S1", "fake:S1", () => now);
+        transport.KeepAwakeTick();
+        Assert.Equal(0, screens.Pushes);
+
+        transport.Write(new byte[FanLcdContent.Size * FanLcdContent.Size * 4]);
+        Assert.Equal(1, screens.Pushes);
+
+        now += FanLcdPanelTransport.StarvationMs - 1;
+        transport.KeepAwakeTick();
+        Assert.Equal(1, screens.Pushes);
+
+        now += 1;
+        transport.KeepAwakeTick();
+        Assert.Equal(2, screens.Pushes);
+        transport.KeepAwakeTick();
+        Assert.Equal(2, screens.Pushes);
+    }
 }

@@ -39,6 +39,10 @@ public sealed class FanLcdPanelTransport : IStreamedPanelTransport, IOrientableP
         _frame = new byte[_encoder.FrameBytes];
         _shown = new byte[_encoder.FrameBytes];
         _clock = clock ?? (() => Environment.TickCount64);
+        if (clock is null)
+        {
+            _keepAwake = new System.Threading.Timer(_ => KeepAwake(), null, StarvationMs, StarvationMs / 2);
+        }
     }
 
     public string Serial { get; }
@@ -101,15 +105,50 @@ public sealed class FanLcdPanelTransport : IStreamedPanelTransport, IOrientableP
             return;
         }
         _encodeFailLogged = false;
-        if (!_screens.PushPanelFrame(_screenSerial, jpeg))
+        lock (_pushGate)
         {
-            _hasShown = false;
-            return;
+            if (!_screens.PushPanelFrame(_screenSerial, jpeg))
+            {
+                _hasShown = false;
+                _lastJpeg = null;
+                return;
+            }
+            _lastJpeg = jpeg;
+            _lastPushMs = now;
         }
         _frame.CopyTo(_shown, 0);
         _hasShown = true;
-        _lastPushMs = now;
     }
+
+    // The overlay sends nothing while a panel's picture stands still, and a wireless TL LCD left
+    // without traffic drops off USB (uni-wireless-sync keeps it awake with periodic traffic), so
+    // the last frame is pushed again whenever nothing else went out for StarvationMs.
+    internal const long StarvationMs = 2000;
+    private readonly object _pushGate = new();
+    private byte[]? _lastJpeg;
+    private System.Threading.Timer? _keepAwake;
+
+    private void KeepAwake()
+    {
+        lock (_pushGate)
+        {
+            if (_disposed || _lastJpeg is not { } jpeg || _clock() - _lastPushMs < StarvationMs)
+            {
+                return;
+            }
+            if (_screens.PushPanelFrame(_screenSerial, jpeg))
+            {
+                _lastPushMs = _clock();
+            }
+            else
+            {
+                _lastJpeg = null;
+            }
+        }
+    }
+
+    /// <summary>One keep-awake pass, for tests.</summary>
+    internal void KeepAwakeTick() => KeepAwake();
 
     private bool Attached() => _screens.AttachedSerials().Contains(_screenSerial, StringComparer.OrdinalIgnoreCase);
 
@@ -119,7 +158,11 @@ public sealed class FanLcdPanelTransport : IStreamedPanelTransport, IOrientableP
         {
             return;
         }
-        _disposed = true;
+        lock (_pushGate)
+        {
+            _disposed = true;
+        }
+        _keepAwake?.Dispose();
         _encoder.Dispose();
     }
 }
