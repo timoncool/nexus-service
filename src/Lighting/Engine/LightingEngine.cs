@@ -78,6 +78,18 @@ public sealed partial class LightingEngine : IDisposable
 
     public int FrameIntervalMs { get; set; } = 33;
 
+    /// <summary>True while a client watches the shared canvas itself (the UI preview). Unset counts as watched.</summary>
+    public Func<bool>? CanvasWatched { get; set; }
+
+    private volatile IReadOnlySet<string>? _undrivenFrameIds;
+
+    /// <summary>Device frames whose output never reaches hardware (leased to another app, uncontrolled, disabled): they do not keep the shared canvas rendering.</summary>
+    public IReadOnlySet<string>? UndrivenFrameIds
+    {
+        get => _undrivenFrameIds;
+        set => _undrivenFrameIds = value;
+    }
+
     /// <summary>
     /// Side of the sampling spot at an LED, as a fraction of the canvas width.
     /// An LED reads the plain mean of a spot this size centered on its sample position, clamped at the canvas edges and
@@ -842,8 +854,11 @@ public sealed partial class LightingEngine : IDisposable
                         var markRendered = false;
                         try
                         {
-                            if (!_frozen || Volatile.Read(ref _frozenRenderedEpoch) != epoch)
+                            var mainDue = !_frozen || Volatile.Read(ref _frozenRenderedEpoch) != epoch;
+                            var mainDrawn = false;
+                            void RenderMain()
                             {
+                                mainDrawn = true;
                                 var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                                 _lastRenderMs = nowMs;
                                 _lastRenderEffect = effect;
@@ -854,7 +869,17 @@ public sealed partial class LightingEngine : IDisposable
                                     markRendered = true;
                                 }
                             }
+                            // Judged on last tick's pins first; a device this tick's pins hand back to the shared canvas
+                            // gets it drawn below in the same tick, never a stale one.
+                            if (mainDue && SharedCanvasNeeded(effect, devices))
+                            {
+                                RenderMain();
+                            }
                             RenderPins(effect, devices);
+                            if (mainDue && !mainDrawn && SharedCanvasNeeded(effect, devices))
+                            {
+                                RenderMain();
+                            }
                         }
                         finally
                         {
@@ -1174,6 +1199,29 @@ public sealed partial class LightingEngine : IDisposable
                 }
             }
         }
+    }
+
+    // Only a shader is skipped: it is a pure function of the clock, so the next frame someone reads is exact.
+    // Other effects carry state from frame to frame and keep rendering.
+    private bool SharedCanvasNeeded(IEffect effect, DeviceFrame[] devices)
+    {
+        if (effect is not Gpu.ShaderEffect || CanvasWatched?.Invoke() != false)
+        {
+            return true;
+        }
+        var undriven = _undrivenFrameIds;
+        foreach (var dev in devices)
+        {
+            if (dev.LedCount <= 0 || undriven?.Contains(dev.Id) == true)
+            {
+                continue;
+            }
+            if (!_pinnedDevices.TryGetValue(dev.Id, out var pinCanvas) || pinCanvas is null)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private const long PinRetryMs = 1000;

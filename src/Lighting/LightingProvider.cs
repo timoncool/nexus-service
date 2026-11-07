@@ -115,6 +115,7 @@ public sealed partial class LightingProvider : ILightingProvider, IDisposable
         _mediaPP.Set(s.MediaEffect.Hue, s.MediaEffect.Colorize, s.MediaEffect.Saturation, s.MediaEffect.Contrast, s.MediaEffect.FlipX, s.MediaEffect.FlipY);
 
         _engine.OnFrame += frame => _ = _hub.BroadcastBinaryAsync(frame);
+        _engine.CanvasWatched = () => _hub.ClientCount > 0;
         _engine.OnEffectChanged += ReconcileAudioCapture;
         // Any settings write can move a pinned effect's look, the pin set, or the mirrored screen.
         _store.OnChanged += RefreshPinnedLooks;

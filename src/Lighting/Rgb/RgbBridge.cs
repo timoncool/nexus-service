@@ -240,6 +240,8 @@ public sealed class RgbBridge : IDisposable
     // Only touched inside OnFrame which the engine serialises, so a plain HashSet
     // is safe here.
     private readonly HashSet<int> _touchedPhysicals = new();
+    // Only touched inside OnFrame.
+    private readonly HashSet<string> _undrivenScratch = new(StringComparer.Ordinal);
     // Reused across frames - physical index -> true when every zone frame
     // mapped to it is uncontrolled, so the whole physical device is skipped
     // rather than pushed. Only touched inside OnFrame.
@@ -2694,6 +2696,7 @@ public sealed class RgbBridge : IDisposable
             uncontrolled = withLeased;
         }
         var uncontrolledCount = uncontrolled.Count;
+        PublishUndrivenFrames(disabled, uncontrolled);
         var devicePrefs = settings.Devices.LightingDevicePrefs;
         var globalBrightness = MasterBrightness.Resolve(settings);
         var nowTicks = DateTime.UtcNow.Ticks;
@@ -2859,6 +2862,18 @@ public sealed class RgbBridge : IDisposable
     /// </summary>
     internal static bool IsBridgeFrame(DeviceFrame dev, IReadOnlySet<string> bridgeFrameIds) =>
         bridgeFrameIds.Contains(dev.Id);
+
+    // Disabled frames stream black and uncontrolled or leased ones are not pushed: none of them reads the shared canvas.
+    private void PublishUndrivenFrames(List<string> disabled, List<string> uncontrolled)
+    {
+        _undrivenScratch.Clear();
+        _undrivenScratch.UnionWith(disabled);
+        _undrivenScratch.UnionWith(uncontrolled);
+        if (_engine.UndrivenFrameIds is not { } current || !current.SetEquals(_undrivenScratch))
+        {
+            _engine.UndrivenFrameIds = new HashSet<string>(_undrivenScratch, StringComparer.Ordinal);
+        }
+    }
 
     /// <summary>
     /// Fills <paramref name="result"/> (cleared first) with physical index ->
