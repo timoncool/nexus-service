@@ -829,7 +829,8 @@ public sealed partial class Slv3Hub : IDisposable
         }
     }
 
-    // An RX that stays deaf through TX resets gets the same guarded port cycle a hung TX does.
+    // An RX that stays deaf through TX resets gets its own port cycled under the guards a hung
+    // TX has: a cycled TX left the RX deaf, a replug that re-enumerated the RX cured it.
     private void ConsiderRxWedgePortCycleLocked(long nowMs)
     {
         var cycler = TxPortCycler;
@@ -838,11 +839,11 @@ public sealed partial class Slv3Hub : IDisposable
             || nowMs - _rxWedgeSinceMs < RxWedgeMinMsBeforePortCycle
             || nowMs < _nextPortCycleMs
             || Volatile.Read(ref _portCycleInFlight) != 0
-            || FindPortLocked(Slv3DongleRole.Tx) is not { } txPort)
+            || FindPortLocked(Slv3DongleRole.Rx) is not { } rxPort)
         {
             return;
         }
-        if (StartTxPortCycleLocked(cycler, txPort, nowMs, _rxWedgeTxResets, (nowMs - _rxWedgeSinceMs) / 60_000))
+        if (StartTxPortCycleLocked(cycler, rxPort, nowMs, _rxWedgeTxResets, (nowMs - _rxWedgeSinceMs) / 60_000))
         {
             _rxWedgeTxResets = 0;
             _rxWedgeSinceMs = 0;
@@ -905,9 +906,12 @@ public sealed partial class Slv3Hub : IDisposable
                 slot = _portCycleTimesMs.Count;
             }
             Interlocked.Increment(ref _portCycles);
-            ServiceLog.Warn($"[lianli-wireless] TX ignored {resets} RX reset(s) over {hungMinutes} min, cycling its USB port {target} ({slot}/{MaxPortCyclesPerWindow} today)");
+            var why = txPort.Role == Slv3DongleRole.Rx
+                ? $"RX stayed deaf through {resets} TX reset(s) over {hungMinutes} min"
+                : $"TX ignored {resets} RX reset(s) over {hungMinutes} min";
+            ServiceLog.Warn($"[lianli-wireless] {why}, cycling its USB port {target} ({slot}/{MaxPortCyclesPerWindow} today)");
             var ok = cycler.TryCycle(instanceId, out var detail);
-            ServiceLog.Warn($"[lianli-wireless] TX port cycle {(ok ? "done" : "failed")}: {detail}");
+            ServiceLog.Warn($"[lianli-wireless] {txPort.Role} port cycle {(ok ? "done" : "failed")}: {detail}");
         }
         catch (Exception ex)
         {

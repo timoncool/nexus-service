@@ -365,6 +365,15 @@ public partial class Slv3HubTests
         Assert.Equal(expected, Slv3TxPortIdentity.IsTxInstanceId(instanceId));
 
     [Theory]
+    [InlineData(@"USB\VID_0416&PID_8041\a&717997b&0&2", Slv3DongleRole.Rx, true)]
+    [InlineData(@"USB\VID_0416&PID_8040\a&717997b&0&3", Slv3DongleRole.Rx, false)]
+    [InlineData(@"USB\VID_0416&PID_8041\a&717997b&0&2", Slv3DongleRole.Tx, false)]
+    [InlineData(@"USB\VID_1A86&PID_8091\a&717997b&0&1", Slv3DongleRole.Rx, false)]
+    [InlineData(@"USB\VID_0416&PID_8041&MI_00\a&1&0&0000", Slv3DongleRole.Rx, false)]
+    public void A_port_cycle_targets_only_the_named_dongle_half(string instanceId, Slv3DongleRole role, bool expected) =>
+        Assert.Equal(expected, Slv3TxPortIdentity.IsDongleInstanceId(role, instanceId));
+
+    [Theory]
     [InlineData(@"USB\ROOT_HUB30\4&1&0", true)]
     [InlineData(@"USB\VID_1A86&PID_8091\6&1&0&13", true)]
     [InlineData(@"PCI\VEN_8086&DEV_1\3&1", false)]
