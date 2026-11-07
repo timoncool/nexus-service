@@ -24,6 +24,13 @@ public sealed class Slv3State
     /// <summary>Lock bound devices (L-Connect's device lock): fans Nexus owns are bound back from any state. Persisted, default on.</summary>
     public bool LockBoundDevices { get; set; } = true;
 
+    /// <summary>The air count: RF payloads written to the TX over the last full minute and its busiest second; null while off or until a minute has passed.</summary>
+    public int? AirPayloadsPerMinute { get; set; }
+    public int? AirPeakPerSecond { get; set; }
+
+    /// <summary>Whether the air count runs (it also writes each minute to the service log). Persisted, default off.</summary>
+    public bool AirCount { get; set; }
+
     /// <summary>
     /// Why the link is down, for the device page's disconnected state. One of
     /// <see cref="Slv3LinkStatus"/>. Only a connect attempt writes it, so it

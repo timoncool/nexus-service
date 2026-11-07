@@ -413,6 +413,7 @@ public sealed partial class Slv3Hub : IDisposable
         _discovery = discovery;
         _transportFactory = transportFactory;
         _nowMs = nowMs ?? (() => Environment.TickCount64);
+        AirCount = new Slv3AirCount(State, _nowMs);
         if (lockState is not null)
         {
             _lockSleep = new Nexus.Service.Lighting.LcdLockSleepSet(lockState);
@@ -428,6 +429,9 @@ public sealed partial class Slv3Hub : IDisposable
     private readonly Func<long> _nowMs;
 
     public Slv3State State { get; } = new();
+
+    /// <summary>The device page's RF payload count, off unless switched on.</summary>
+    public Slv3AirCount AirCount { get; }
 
     /// <summary>
     /// The link is up. It stays up while a dongle half is reset or reopened in
@@ -2884,11 +2888,17 @@ public sealed partial class Slv3Hub : IDisposable
     {
         lock (_lock)
         {
-            // Re-arm when chains appeared after the last arming: the LCD loops
-            // call this on USB attach, typically before the first GetDev poll
-            // has populated the chain list, and un-prepped chains would keep
-            // colliding with the video link.
-            var deviceCount = Math.Max(1, _knownChains.Count);
+            // Re-arm when chains appeared after the last arming: un-prepped
+            // chains keep colliding with the video link. The LCD loops call
+            // this on USB attach, often before the first GetDev poll has
+            // listed any chain; arming then preps one device, the RX answers
+            // only busy replies from then on, so no chain is ever listed to
+            // trigger the re-arm. Arming waits for the first device list.
+            var deviceCount = _knownChains.Count;
+            if (deviceCount == 0)
+            {
+                return false;
+            }
             if (_videoModeActive && deviceCount <= _videoModePreppedCount)
             {
                 return true;
@@ -3358,6 +3368,7 @@ public sealed partial class Slv3Hub : IDisposable
         {
             return false;
         }
+        Slv3AirMetrics.RfPayloads.Add(1);
         var sent = true;
         foreach (var frame in Slv3Protocol.BuildUsbSendRf(channel, rxType, payload))
         {

@@ -2836,10 +2836,27 @@ public partial class Slv3HubTests
 
         hub.Disconnect();
         Assert.True(hub.EnsureConnected());
+        Assert.True(hub.DriveTick());
         tx.SentFrames.Clear();
 
         Assert.True(hub.EnsureVideoMode());
         Assert.NotEmpty(tx.SentFrames.FindAll(f => f.Length >= 2 && f[0] == Slv3Protocol.UsbGetMac && f[1] == 0x01));
+    }
+
+    [Fact]
+    public void EnsureVideoMode_waits_for_the_first_device_list()
+    {
+        var (hub, net, tx, _) = CreateConnectedHub();
+        net.Fans.Add(new SimulatedFan { Mac = FanMac });
+        tx.SentFrames.Clear();
+
+        Assert.False(hub.EnsureVideoMode());
+        Assert.Empty(tx.SentFrames);
+
+        Assert.True(hub.DriveTick());
+        tx.SentFrames.Clear();
+        Assert.True(hub.EnsureVideoMode());
+        Assert.Equal(2, tx.SentFrames.Count);
     }
 
     // Finds the most recent RF_Bind USB frame (chunk 0) addressed to fanMac,

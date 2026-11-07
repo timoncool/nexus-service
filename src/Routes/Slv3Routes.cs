@@ -250,6 +250,18 @@ public static partial class Slv3Routes
             return Results.Json(ApiResponse.Ok(), AppJsonContext.Default.ApiResponse);
         });
 
+        // PUT /devices/lianli-wireless/air-count - switch the RF payload count on or off and persist it.
+        app.MapPut("/devices/lianli-wireless/air-count", (Slv3LockRequest body, Slv3Hub hub, IConfigStore store) =>
+        {
+            if (body.Enabled is not { } enabled)
+            {
+                return Results.BadRequest(ApiResponse.Fail("enabled is required"));
+            }
+            store.Update(settings => settings.Devices.LianLiWireless.AirCount = enabled);
+            hub.AirCount.SetEnabled(enabled);
+            return Results.Json(ApiResponse.Ok(), AppJsonContext.Default.ApiResponse);
+        });
+
         // POST /devices/lianli-wireless/identify - one-shot RF_Select flash.
         app.MapPost("/devices/lianli-wireless/identify", (Slv3MacRequest body, Slv3Hub hub) =>
         {
