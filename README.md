@@ -1,270 +1,154 @@
-# nexus-service
+<div align="center">
 
-The local Nexus hardware service: one Native-AOT binary per OS (Windows, macOS,
-Linux) that talks to the hardware and exposes a REST + WebSocket API on the
-user's PC. Everything else in [Nexus](https://hellonexus.com) is a client of
-this process: the [`nexus-web`](https://github.com/hello-nexus/nexus-web)
-dashboard, the on-device panels, the phone companions, and
-[`nexus-overlay`](https://github.com/hello-nexus/nexus-overlay).
+# Nexus Fast
 
-## What it does
+**A Nexus build for PC lighting, screens and cooling: lower load, sturdier Lian Li wireless, screens that match their LEDs.**
 
-| Area | Summary |
-| --- | --- |
-| **Monitoring** | CPU, GPU, RAM, disk, network, fan, temperature, FPS and battery sensors (LibreHardwareMonitor on Windows, IOKit on macOS, sysfs on Linux), 1 Hz history, a timeline of system events, per-drive SMART health. |
-| **Cooling** | Fan curves, pump and AIO control across the first-party and vendor hubs the service drives, with calibration, safety limits and a CPU thermal guard (on by default) that raises fans near the part's own temperature limit and repairs curve configs that can stall them. |
-| **Lighting** | RGB for the whole OpenRGB catalog through a bundled headless child process, plus first-party protocols. Effects engine, screen and audio sync, key-press reactions on per-key keyboards, LAN smart lights (Hue, Nanoleaf, Govee). |
-| **Devices** | Native USB drivers: HYTE (Y70, Q-series, Keeb, CNVS, hubs), Lian Li (Uni Fan, Galahad II, HydroShift LCD, HydroShift II, Strimer, wireless, TL and SL-INF LCD Flex fans, P28 V2 fans), Corsair iCUE LINK, Xeneon Edge and Galleon 100 SD (screen, dials, keyboard and dial lighting), NZXT Kraken and RGB & Fan Controller (fans), iBUYPOWER (AW5, keyboards, mice), Tryx Panorama, Elgato Stream Deck (keys, dials, touch strip), Nollie, Asiahorse Umbra V2. Firmware updates, and detection of competing vendor software. |
-| **Panels** | Pairs and serves the React panel UIs for the Y70 touch panel, Q-series screens and the phone companion, and streams off-screen rendered panels (H.264 or raw frames) to USB display devices on Windows and macOS. |
-| **Apps** | Host for `nexus.app/1` SDK apps (sandboxed Web Worker runtime, sensor bindings) and the cloud app store. |
-| **Activity** | Screen time, app detection, installed-game catalog with per-game FPS sessions, focus modes, per-app volume mixer, media sessions, and the Steam, Discord, OBS, Twitch and Home Assistant integrations. |
-| **Diagnostics** | SMART/NVMe health, Windows event-log incidents, GPU throttling, pump and fan stall detection, rolled up into per-component health verdicts with a support-bundle export. |
-| **Remote** | Pairing (local TLS, SPKI pinning, pair codes), a regional relay for the phone away from the LAN with a WebRTC direct upgrade, and phone-as-webcam. |
-| **Cloud** | Optional Nexus account: profile backup and sync, device reporting, fleet telemetry, OTA self-update. Disabled in unofficial builds (see Build). |
-| **AI** | In-process MCP (Model Context Protocol) server, off by default, exposing telemetry, diagnostics, history and control behind per-capability consent and an audit log. Dev-tools builds add a local Ollama-backed assistant. |
-| **Lifecycle** | Windows service and tray, macOS launchd, Linux systemd daemon. Single instance, self-elevation, migration from Nexus 2 and FanControl. |
+[![License](https://img.shields.io/github/license/timoncool/nexus-service?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/timoncool/nexus-service?style=flat-square)](https://github.com/timoncool/nexus-service/stargazers)
+[![Last Commit](https://img.shields.io/github/last-commit/timoncool/nexus-service/lighting-accent?style=flat-square)](https://github.com/timoncool/nexus-service/commits/lighting-accent)
+[![Downloads](https://img.shields.io/github/downloads/timoncool/nexus-service/total?style=flat-square)](https://github.com/timoncool/nexus-service/releases)
 
-Per-subsystem detail (routes, invariants, security notes) is in
-[`docs/subsystems.md`](docs/subsystems.md). The generated REST inventory is
-[`docs/openapi.json`](docs/openapi.json); WebSocket topics and polling cadence
-are in [`docs/network-transport.md`](docs/network-transport.md).
+**[English](README.md)** · **[Русский](README_RU.md)**
 
-## Ports
+![Fan and pump screens matched to their LEDs after webcam calibration](docs/calibration/after.jpg)
 
-| Port | Bind | Purpose |
-| --- | --- | --- |
-| `9400` | HTTP, loopback | Dashboard and panel transport. The bind address is the first CLI argument. |
-| `9443` | HTTPS | Pairing and remote panel surfaces over a locally generated certificate whose SPKI the clients pin. Derived from the HTTP port. |
-| `9401` | HTTP, loopback, Windows | Q-series panel tunnel: the host side of the panel's `adb reverse`. Skipped silently if taken. |
-| `9402`, `9445` | HTTP and HTTPS, loopback | Wired Android phone: the host side of its `adb reverse` for 9400 and 9443. Requests here are treated as a remote client, never as the desktop. Derived from the main ports; skipped silently if taken. |
-| `9420` | HTTP, loopback (all interfaces when remote connections are allowed) | MCP server, when AI Integration is enabled. Single endpoint `POST /mcp`, its own bearer token. |
-| `6742` | TCP, loopback | OpenRGB SDK server of the headless child process. |
-| `11434` | HTTP, loopback | Managed Ollama runtime behind the local assistant (dev-tools builds only). |
+</div>
 
-## Develop
+Nexus Fast is a fork of [Nexus](https://github.com/hello-nexus/nexus) (service and web UI) that cuts CPU, GPU and radio load, lets Lian Li wireless controllers recover from dongle hangs on their own, lights fan and pump screens in the colour of their LEDs, and hands OpenRGB devices to other apps. Windows; installs over the official Nexus 3.1.9-beta.1 and rolls back with one command.
 
-Prerequisites: .NET 10 SDK. Node.js 22 if you want the embedded dashboard;
-the build pulls it in from a sibling `nexus-web` checkout.
+## Features
 
-```sh
-cd ../nexus-web && npm install && cd ../nexus-service   # once, for the web UI
+- **Lower load** — fan screens skip unchanged frames, lighting nobody reads is not rendered, 40% fewer radio packets
+- **Self-healing Lian Li dongle** — a deaf receiver or a hung transmitter is reset through the other half of the dongle, then only its own USB port is cycled, guarded against needless resets
+- **Radio settings in the UI** — 2.4 GHz channel with its frequency, lighting frame rate over radio, resend budget, packet counter; the channel is saved
+- **No rainbow on dropouts** — each fan's flash holds the average colour of the current effect, so a lost link looks like a frozen colour
+- **Ambient Glow** — a screen design lit by its fan's own LED colour, with colour-wheel HUD colours, glass effects and blend modes
+- **Webcam screen calibration** — a hue table and brightness curve measured by a camera so the glass matches the LEDs
+- **Sensor rotation and layout editor** — a screen shows sensors in turn; drag, resize and rotate parts of the gauge
+- **OpenRGB device hand-off** — Nexus answers the OpenRGB SDK port and gives a chosen device to another app (Aurora, SignalRGB…); each app sees only its own
+- **Select-all lock** — keep a lighting card out of Select all
 
-dotnet run              # JIT dev build at http://localhost:9400
-dotnet test             # xUnit suite
-dotnet build -p:BuildWeb=false   # skip the nexus-web build when iterating on service code
-```
+## Numbers
 
-- The build runs `npm run build:service` in `../nexus-web` and copies its
-  `dist/` into `wwwroot/`.
-- OpenRGB binaries under `Bundled/<rid>/openrgb/` are optional in development;
-  without them RGB features report as unavailable.
-- `dotnet run -- http://localhost:9400` overrides the bind address.
+Measured on one PC (Ryzen 9 9950X3D, RTX 4090, Lian Li TL / TL LCD wireless, HydroShift II LCD-C), before and after:
 
-Diagnostic environment variables (on Windows set them machine-scope: the
-service runs as LocalSystem and cannot see user-scope variables):
+| What | Before | After |
+|---|---|---|
+| Screens (WebView), CPU | 0.356 cores | **0.157 cores** (−56%) |
+| Screens (WebView), GPU | 8.9% | **0.8%** (−91%) |
+| Radio packets to the dongle | 100% | **about 60%** (−40%) |
+| Whole Nexus with screens, CPU | — | **1.4%** (32 threads) |
 
-| Variable | Effect |
-| --- | --- |
-| `NEXUS_DATA_ROOT` | Data directory override on every platform, for pointing a test host at a throwaway store. |
-| `NEXUS_OPENRGB_VERBOSITY` | `verbose` or `trace` raises what the OpenRGB child prints into the service log. Applies at launch. |
-| `NEXUS_STOP_SETTLE_MS` | How long turning lighting off waits after the final black frame before the OpenRGB child is killed (default 300, max 5000). |
-| `NEXUS_DISCORD_PRESENCE_CLIENT_ID` | Discord application used for Rich Presence, to test against a scratch application. |
-| `NEXUS_LED_SPACE` | Windows only. `0` closes the LED-space look-ahead window path so every window renders through the canvas path. |
-| `NEXUS_D3D_PREVENT_THREADING` | Windows only. `1` creates the ANGLE renderer's D3D11 device with the driver's internal threading off. |
-| `NEXUS_DISABLE_DDC` | Linux only. `1` skips DDC/CI display brightness probing over the I2C buses. |
-| `NEXUS_API_BASE`, `NEXUS_CLOUD_API` | Cloud API base override for the account and LED-mapping clients, and for the store catalog proxy respectively. |
+Tip: set Settings → Lighting & Cooling → Rendering device to your discrete GPU. Lighting on an RTX 4090 costs 0.34% versus 6.6% on the Ryzen integrated graphics, and the 4090 stays idle.
 
-## Source layout
+## Install
 
-```
-src/
-  Program.cs           # AOT minimal-API host bootstrap
-  Routes/              # one file per REST surface
-  Sockets/             # multiplexed WebSocket hub + topics
-  Auth/  Security/     # pairing tokens, panel/desktop access policy, local HTTPS cert, security headers
-  Sensors/             # LibreHardwareMonitor (Windows), IOKit (macOS), sysfs (Linux)
-  Monitoring/          # 1 Hz history store, timeline events, broadcaster
-  Cooling/             # curve engine, thermal guard, calibration, safety, per-hub cooling providers
-  QSeries/             # persisted adb transport to Q-series screens
-  Lighting/            # Engine/ effects + canvas, Rgb/ OpenRGB bridge, Zones/, Mappings/, Capture/, Smart/, Scene/ 3D placement, KeyReactive/ key-press reactions
-  Devices/             # device manager, USB detection, per-device handlers, firmware
-  Peripherals/         # protocol drivers per vendor (Hyte, LianLi*, Corsair*, Nzxt, Ibp, Tryx, StreamDeck, Keeb, Y70, ...)
-  Conflicts/           # competing vendor-software detection, device ownership, opt-in shutdown
-  Panel/               # panel pairing, kiosk launch, backgrounds; Streams/ = streamed-panel sessions + transports
-  Sentry/              # lock alert: armed on a locked PC, the first input pushes to paired phones through the cloud API (reads no input itself)
-  Deck/  Rendering/    # deck action model + headless executor; server-rendered tiles and key images
-  Hotkeys/             # global hotkeys: bindings, OS registration status, firing; registered with the OS only (Carbon on macOS, the user helper's RegisterHotKey on Windows), never by capturing keystrokes
-  Widgets/  Store/     # nexus.app/1 app host and installer; cloud app-store proxy, entitlements
-  Gallery/  Media/     # shared image/video sources; media import + library
-  Activity/            # screen time, app detection, audio analysis
-  Games/  Fps/         # installed-game catalog, FPS capture and per-game sessions
-  FocusModes/  Audio/  # focus modes; per-app volume mixer and audio playback
-  Steam/ Discord/ Obs/ Twitch/ Klipy/ Integrations/   # third-party integrations (Klipy/ = GIF catalog, Integrations/ = Home Assistant)
-  Diagnostics/         # event-log monitor, SMART/NVMe, GPU/cooling/memory checks, health model, support bundle
-  Relay/  Rtc/         # off-LAN relay client and sealed channels; WebRTC direct transport
-  Webcam/  Transfer/   # phone-as-webcam backends; phone-to-PC file transfer inbox
-  Discovery/  Net/     # mDNS advertising; local network helpers
-  Cloud/  Telemetry/   # account client, profile sync, device reporting; fleet telemetry
-  Update/              # OTA self-update engine
-  Mcp/                 # MCP server, tool registry, audit store; Assistant/ = local Ollama assistant
-  Lifecycle/  Platform/# install/uninstall, service and tray hosting, CLI flags; per-OS shims
-  Helper/              # user-session helper process (Windows): audio, displays, input, tray, and other work Session 0 cannot do
-  Persistence/         # settings, profiles, atomic JSON files, data paths
-  Migration/           # Nexus 2 and FanControl config import
-  Benchmarks/          # in-app hardware benchmark runner
-  Actions/ Common/ Defaults/ DependencyInjection/ Models/ Notifications/ Plugins/ Serialization/   # shared plumbing
-docs/
-  subsystems.md        # per-subsystem detail: routes, invariants, security notes
-  openapi.json         # generated REST route inventory (see Build)
-  network-transport.md # WebSocket topics, polling cadence, reconnect semantics
-  ws-topic-rbac.md     # design note on per-topic WebSocket authorization
-  shader-benchmark.md  # Q-series shader performance baseline
-data/                  # shipped defaults: install defaults, animate templates, OpenRGB device catalog,
-                       # built-in ARGB product LED mappings (embedded; the picker works offline)
-Bundled/               # per-RID third-party binaries (adb, dfu-util, pawnio, bench CLIs, skia), openrgb + ffmpeg added at publish; macos/ linux/ windows/ = first-party helpers, icons, macOS build scripts
-installer/             # Windows Inno Setup + web installer, MSIX, Linux tarball packager
-tests/
-  Nexus.Service.Tests       # xUnit, AOT-safe
-  Nexus.Service.Benchmarks  # BenchmarkDotNet hot paths, on-demand
-```
+1. **Install the official Nexus 3.1.9-beta.1** — [hello-nexus/nexus releases](https://github.com/hello-nexus/nexus/releases/tag/v3.1.9-beta.1).
+2. **Download the Nexus Fast archive** from [Releases](https://github.com/timoncool/nexus-service/releases) and unpack it.
+3. **Run `install.cmd`** and accept the administrator prompt. It stops the Nexus service, keeps the original `Nexus.exe` and `wwwroot` in `C:\Program Files\Nexus\_original-<date>`, installs Nexus Fast and starts the service.
 
-## Build
+Roll back: `restore.cmd` puts the latest saved original back.
 
-One AOT binary per OS. Windows targets `net10.0-windows10.0.19041.0`; macOS
-and Linux target `net10.0`.
+## Webcam screen calibration
 
-```sh
-dotnet publish -c Release -r win-x64   -o publish-win     # cross-compiles from macOS too
-dotnet publish -c Release -r osx-arm64 -o publish-mac     # AOT is mandatory here; never pass -p:PublishAot=false
-dotnet publish -c Release -r linux-x64 -o publish-linux
-```
+LEDs are many times brighter than an LCD and render colour differently, so a screen showing "the same" colour looks off next to its fan. A camera watches the case while the lighting steps through test colours, and scripts move the screen's hue table (`slotN_glowHueLut`) and brightness curve (`slotN_glowGamma`) until the glass matches the LEDs.
 
-- A publish fails loudly without the OpenRGB binaries under
-  `Bundled/<rid>/openrgb/`. Build them from
-  [`nexus-rgb`](https://github.com/hello-nexus/nexus-rgb) first; the csproj
-  error spells out the commands.
-- The bundled ffmpeg is stock upstream ffmpeg with a minimal LGPL-only
-  configuration, compiled by `scripts/build-ffmpeg-minimal.sh`. It is optional
-  at build time: `bash scripts/fetch-ffmpeg.sh all` (or `mac | win | linux`)
-  produces it once per RID.
-- `Bundled/win-x64/angle/` holds the ANGLE `libEGL.dll` and `libGLESv2.dll`
-  (a Direct3D 11 only build, recipe in `BUILD.md`; licenses in
-  `ANGLE-LICENSE.txt`) and publishes to `<publish>/angle/`. They are the default
-  Windows lighting renderer (`Lighting.RenderBackend` = `angle`, OpenGL ES 3 on
-  Direct3D 11); `wgl` remains as a fallback and win-arm64 uses `wgl`.
-  Setting `Lighting.RenderGpu` to `software` (ANGLE only) renders shaders on the
-  CPU through ANGLE WARP, with no hardware probe; it applies after a restart.
-- `Bundled/<rid>/skia/libSkiaSharp` is a raster-only Skia build with HarfBuzz
-  and libjpeg-turbo linked in, committed per RID and rebuilt with
-  `Bundled/skia/build.sh` / `build.ps1` (see `Bundled/skia/NOTES.md`). It
-  exports only `Bundled/skia/exports.txt`, and an AOT publish fails if the
-  service starts calling a SkiaSharp or HarfBuzzSharp API outside that list.
-- The Windows virtual display driver behind secondary-monitor mode is optional
-  at build time: `Bundled/windows/nexus-vdd/build.ps1` builds it into
-  `Bundled/win-x64/vdd/` with the VS Build Tools (it downloads the WDK package
-  itself). Without it the setting is not offered.
-- Device firmware images are vendor files kept outside this repository. The
-  csproj embeds them from `NEXUS_FIRMWARE_DIR` (or `-p:NexusFirmwareDir=`), a
-  gitignored `data/firmware/`, or a sibling `firmware/` directory when one
-  exists. A public clone builds with an empty firmware catalog; an official
-  publish (one carrying the client token) fails without the images.
-- `-p:DevTools=true` compiles in internal tooling (the local AI assistant,
-  firmware downgrade paths, D213 panel discovery, the simulated Nexus 2
-  install). Distribution builds leave it unset.
-- `NEXUS_CLIENT_TOKEN` (or `-p:NexusClientToken=`) is the build credential
-  minted by release CI, with `~/.nexus-build/client-token` as the local
-  fallback. Its presence defines `OFFICIAL_BUILD`, which wires up the cloud
-  account, profile sync, relay, fleet telemetry and the OTA updater. A build
-  without it, which is every public clone, is local-only and dials none of the
-  hosted services. `NEXUS_KLIPY_KEY` (the GIF picker's
-  api.klipy.com app key) is injected the same way.
+| Before calibration | After |
+|---|---|
+| ![before](docs/calibration/before.jpg) | ![after](docs/calibration/after.jpg) |
 
-### Route inventory
+Left: stock Nexus screens next to the lighting. Right: five test colours after calibration, the glass in tone with the LEDs.
 
-`docs/openapi.json` is generated from the live route registration. Regenerate
-it whenever a route is added, removed or renamed:
+There is no UI for it yet; these are the Python scripts one PC was calibrated with: [tools/camera-calibration](tools/camera-calibration/README.md). A UI in Nexus is planned.
 
-```sh
-dotnet run -- --emit-openapi docs/openapi.json
-```
+## Screenshots
 
-The flag starts the host only far enough to register endpoints. The
-generator exists only in `Debug` builds (the default for `dotnet run`); a
-release build neither accepts `--emit-openapi` nor ships the OpenAPI packages.
-A `DEBUG` build also serves the document at `/openapi/v1.json`. The committed copy is
-the release flavour; dev-tools-only routes appear only when regenerated with
-`-p:DevTools=true`.
+| Dongle radio | Device hand-off |
+|---|---|
+| ![Radio](docs/screenshots/en-dongle-radio.png) | ![Card menu](docs/screenshots/en-lighting-owner-menu.png) |
 
-## Installers
+| Sensor rotation and layout | HUD colours and effects |
+|---|---|
+| ![Screen editor](docs/screenshots/en-lcd-editor.png) | ![HUD colours](docs/screenshots/en-lcd-hud.png) |
 
-- **Windows**: `powershell -File installer/build-installer.ps1` wraps the
-  publish output into `Nexus-Setup.exe`. `-Bootstrap` instead builds the two
-  payload-free web installers (`Nexus-Installer.exe`, `Nexus-Installer-Beta.exe`)
-  that hellonexus.com hands out; they are built once, not per release. See
-  `installer/README.md`.
-- **Linux**: `installer/linux/package.sh publish-linux` produces a tarball;
-  its `install.sh` installs a root systemd daemon to `/opt/nexus`. See
-  `installer/linux/README.md`.
-- **macOS**: `Bundled/macos/build-app.sh` wraps the publish output into
-  `Nexus.app`; `Bundled/macos/sign-notarize.sh` deep-signs it, packages
-  `Nexus.dmg`, notarizes and staples. `NEXUS_SKIP_CAMERA_EXTENSION=1` omits the
-  camera system extension and its helper and activator (CI cannot provision
-  the extension headlessly; the other two do nothing without it). For a local
-  build, `Bundled/macos/sign-local.sh <Nexus.app> <identity>` seals the bundle
-  with a stable identity so macOS privacy grants (Input Monitoring for touch
-  routing, Screen Recording) survive rebuilds.
+## What changed
 
-## Test
+All against Nexus of 5 November 2026 (`hello-nexus/nexus-service` `4bde382b`, `hello-nexus/nexus-web` `bbcecb392`). Code: service — [timoncool/nexus-service](https://github.com/timoncool/nexus-service/tree/lighting-accent), branch `lighting-accent`; UI — [timoncool/nexus-web](https://github.com/timoncool/nexus-web/tree/share-lighting-accent), branch `share-lighting-accent`.
 
-```sh
-dotnet test
-```
+**Lian Li wireless (L-Wireless)**
+- 2.4 GHz channel picked in the UI (each shown with its frequency); the dongle and every bound chain move to it, and the choice survives a restart
+- Lighting frame rate over radio and resend budget are settings, not constants in code
+- Rolling lighting windows go out half as often and late passes are trimmed: about 40% of the air is freed for fan control
+- RF packet counter (System.Diagnostics.Metrics) with an on/off switch: packets a minute and peak per second on the dongle page and in the log
+- Deaf receiver: the transmitter is reset through the receiver (as in lian-li-linux), then the receiver's own USB port is cycled
+- Hung transmitter: resets through the receiver, then its USB port is cycled; at most once in 10 minutes and 3 times a day, only with the display on and not right after sleep
+- LCD video mode is armed only once the device list is known; before, the dongle could go deaf at start
+- The effect's average colour (in linear light) is written to each chain's flash after an effect change; when the stream breaks the chain holds that colour instead of the firmware rainbow
+- Debug: chains playing an effect Nexus did not send are logged
 
-The suite is AOT-safe. Hardware drivers sit behind provider interfaces with
-fake implementations; allocation-budget tests keep the per-frame hot paths
-zero-alloc. Every pull request runs this build and suite in CI
-(`.github/workflows/ci.yml`); see `CONTRIBUTING.md`. `tests/Nexus.Service.Benchmarks` is a BenchmarkDotNet project for
-those hot paths, outside the solution and the publish:
+**Fan and pump screens**
+- Ambient Glow design: the glass glows with the live colour of its fan's LEDs, no dark core and no saturation boost
+- Camera calibration: colour matrix, hue table `slotN_glowHueLut`, brightness curve `slotN_glowGamma`, glow brightness and saturation
+- HUD colours from colour-wheel schemes (complementary, triadic, analogous and more) checked for readability with APCA; white, averaged and flowing modes
+- Glass effects (neon, ring glow, glass, vignette, bevel, emboss and more) and blend modes (screen, overlay, difference…)
+- Sensor rotation in one screen (`slotN_cycle`) with a slide editor, each slide with its own settings
+- Layout editor: number, unit, caption and ring are dragged, resized and rotated with the mouse
+- Whole numbers, a bare degree sign, hidden units, ring inset, two-line captions
+- Screens repaint only when the colour changes, at most 10 times a second; the blur runs on a quarter-size copy; unchanged frames are not sent over USB, and a still screen gets its last frame once a second so it does not sleep
+- The HydroShift II panel is reopened after a ring upload instead of retrying into a silent controller
 
-```sh
-dotnet run -c Release -p:BuildWeb=false --project tests/Nexus.Service.Benchmarks -- --filter '*'
-```
+**Lighting and OpenRGB**
+- OpenRGB SDK broker: Nexus listens on port 6742 and OpenRGB moves to 6741; a device can be handed to a client app (card menu "Give to …" / "Take back to Nexus", owner badge by the name) and other clients do not see it; REST `GET/PUT /devices/openrgb-owners` and MCP tools `get_device_owners` / `set_device_owner`
+- Uncontrolled OpenRGB devices stay visible to other SDK clients
+- The main effect is not rendered when nothing reads it (preview closed, every driven device on its own pinned look)
+- Select-all lock for lighting cards
+- Panel accent follows a lighting card's live colour; panel style MCP tools
 
-On Windows, `Nexus.exe --lighting-bench <out.json> [--backends angle,wgl]
-[--adapters integrated,dedicated,warp] [--seconds N] [--effects a,b]` renders every built-in
-shader effect at the 30 Hz cadence in one child process per backend and
-adapter, and writes timing, CPU, memory and output-fingerprint results as JSON
-plus a summary table, with timestamped `.json` and `.txt` copies in the logs
-directory. `--section ledspace|gate|d3dflag` replaces the standard run with a
-probe of the look-ahead window path (LED-space probe, exactness gate, D3D11
-threading flag).
+## Build from source
 
-Look-ahead windows render through one LED-space draw per window once an
-exactness gate has proven a shader byte-identical to the canvas render on the
-running GPU; any other case uses the canvas path. The window path is
-Windows-only, and `NEXUS_LED_SPACE=0` closes it. `NEXUS_D3D_PREVENT_THREADING=1`
-(Windows-only) creates the ANGLE D3D11 device with the driver's internal
-threading off (off by default).
+The service is .NET 10 (AOT), the UI is Vite. Put `nexus-service` (branch `lighting-accent`) and `nexus-web` (branch `share-lighting-accent`) side by side, build the UI with `npm run build:service` and the service with `dotnet publish Nexus.Service.csproj -c Release -r win-x64`. The original build notes are in [docs/UPSTREAM_README.md](docs/UPSTREAM_README.md).
 
-## Releases
+## Other Projects by [@timoncool](https://github.com/timoncool)
 
-Installers are published as GitHub Releases on
-[`hello-nexus/nexus`](https://github.com/hello-nexus/nexus) under semver tags:
-`Nexus-Setup.exe`, `Nexus.dmg`, `Nexus-Linux-x64.tar.gz`, plus a `SHA256SUMS`
-asset the OTA engine verifies against before installing. The version is the
-`VERSION` file at the repo root; the build stamps it into `BuildInfo.Version`.
+| Project | Description |
+|---|---|
+| [ScreenSavy.com](https://github.com/timoncool/ScreenSavy.com) | Ambient screen generator |
+| [Bulka](https://github.com/timoncool/Bulka) | Live-coding music platform |
+| [ACE-Step Studio](https://github.com/timoncool/ACE-Step-Studio) | AI music studio — songs, vocals, covers, videos |
+| [VideoSOS](https://github.com/timoncool/videosos) | AI video production in the browser |
+| [telegram-api-mcp](https://github.com/timoncool/telegram-api-mcp) | Full Telegram Bot API as MCP server |
 
-## Third-party
+## Authors
 
-OpenRGB (GPLv2) ships as a separate child process, source at
-[`hello-nexus/openrgb-headless`](https://github.com/hello-nexus/openrgb-headless).
-Every bundled component (LibreHardwareMonitor, PawnIO, dfu-util, ffmpeg, ...)
-is listed with its license in [`THIRD-PARTY.md`](THIRD-PARTY.md).
+- **Nerual Dreming** — [Telegram](https://t.me/nerual_dreming) | [neuro-cartel.com](https://neuro-cartel.com) | [ArtGeneration.me](https://artgeneration.me)
+
+## Acknowledgements
+
+- [hello-nexus](https://github.com/hello-nexus) — Nexus itself
+- [lian-li-linux](https://github.com/sgtaziz/lian-li-linux) — the Lian Li wireless protocol work
+- [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) — RGB device control
+
+## Support the Author
+
+I build open-source software and do AI research. Most of what I create is free and available to everyone. Your donations help me keep creating without worrying about where the next meal comes from =)
+
+**[All donation methods](https://github.com/timoncool/ACE-Step-Studio/blob/master/DONATE.md)** | **[dalink.to/nerual_dreming](https://dalink.to/nerual_dreming)** | **[boosty.to/neuro_art](https://boosty.to/neuro_art)**
+
+- **BTC:** `1E7dHL22RpyhJGVpcvKdbyZgksSYkYeEBC`
+- **ETH (ERC20):** `0xb5db65adf478983186d4897ba92fe2c25c594a0c`
+- **USDT (TRC20):** `TQST9Lp2TjK6FiVkn4fwfGUee7NmkxEE7C`
+
+## Star History
+
+<a href="https://github.com/timoncool/nexus-service/stargazers">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="docs/stars-dark.svg" />
+   <source media="(prefers-color-scheme: light)" srcset="docs/stars-light.svg" />
+   <img alt="Star History Chart" src="docs/stars-light.svg" />
+ </picture>
+</a>
 
 ## License
 
-`nexus-service` is licensed under the GNU Affero General Public License v3.0;
-see [`LICENSE`](LICENSE). Bundled third-party components keep their own
-licenses.
-
-Copyright (C) 2026 Hello Nexus
+[AGPL-3.0](LICENSE), like the original Nexus. Nexus Fast is a modified version of Nexus by hello-nexus; every change is listed above and is in the history of the `lighting-accent` and `share-lighting-accent` branches.
