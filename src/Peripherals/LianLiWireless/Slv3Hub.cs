@@ -389,8 +389,9 @@ public sealed partial class Slv3Hub : IDisposable
     // RF payloads per second the late passes may bring the TX up to. The TX
     // accepts writes far faster than the air carries them and drops the excess:
     // two chains sustaining 258/s lost every window, 193/s landed (Y70 USBPcap,
-    // 2026-10-04).
-    private const int LatePassAirBudgetPerSecond = 180;
+    // 2026-10-04). The budget stays well under that, since the uploads' own
+    // passes burst above it.
+    private const int LatePassAirBudgetPerSecond = 120;
     private const int AirRateWindowMs = 1000;
     private readonly Queue<long> _airSendsMs = new();
 

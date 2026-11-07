@@ -280,11 +280,12 @@ public sealed class Slv3LightingFrameWriter : IHostedService, IDisposable
     }
 
     // Rolling windows. Longer loops hitched the chain's frame decoder; one frame
-    // lasts one engine frame in RF clock ticks; the upload period stays under
-    // half a window so one lost upload is still covered.
+    // lasts two engine frames in RF clock ticks: at one, a handful of chains
+    // uploading together outruns what the 1 Mbps link carries; the upload
+    // period stays under half a window so one lost upload is still covered.
     internal const int WindowFrames = 30;
-    internal const int WindowIntervalTicks = 53;
-    private const int WindowPeriodMs = 450;
+    internal const int WindowIntervalTicks = 106;
+    private const int WindowPeriodMs = 900;
     private const int PendingTimeoutMs = 3 * WindowPeriodMs;
     // Live frames until a chain's brightness, prefs or power have settled, so a
     // window never bakes a change in late.
