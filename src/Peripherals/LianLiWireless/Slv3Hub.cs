@@ -2442,7 +2442,12 @@ public sealed partial class Slv3Hub : IDisposable
         {
             var chain = _knownChains[key];
             records.Add(chain.Record);
-            fans.Add(ToFanInfo(chain.Record, stale: nowMs - chain.LastSeenMs > ChainStaleMs));
+            var stale = nowMs - chain.LastSeenMs > ChainStaleMs;
+            fans.Add(ToFanInfo(chain.Record, stale));
+            if (!stale)
+            {
+                CheckEffectEchoLocked(chain.Record, nowMs);
+            }
         }
         _lastFanRecords = records;
         _anyAioBound = records.Exists(r => r.IsHydroShift && IsBoundToUsLocked(r));
@@ -3339,12 +3344,68 @@ public sealed partial class Slv3Hub : IDisposable
         BeginUpload();
         try
         {
-            return SendRgbDataParts(channel, rxType, packets, effectIndex, dataPasses, out effectIndexHex);
+            if (!SendRgbDataParts(channel, rxType, packets, effectIndex, dataPasses, out effectIndexHex))
+            {
+                return false;
+            }
+            NoteEffectSent(macHex, effectIndex);
+            return true;
         }
         finally
         {
             EndUpload();
         }
+    }
+
+    // Echo check for the radio debug: the effect_index each chain was last sent, and
+    // the chain it last reported something else for, so each mismatch is logged once.
+    private const long EffectEchoGraceMs = 2_000;
+    private readonly Dictionary<string, (string Sent, string Previous, long AtMs)> _effectsSent = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _effectMismatchLogged = new(StringComparer.OrdinalIgnoreCase);
+
+    private void NoteEffectSent(string macHex, byte[] effectIndex)
+    {
+        var hex = Convert.ToHexString(effectIndex);
+        lock (_effectsSent)
+        {
+            var previous = _effectsSent.TryGetValue(macHex, out var e) ? e.Sent : "";
+            _effectsSent[macHex] = (hex, previous, _nowMs());
+        }
+    }
+
+    // A chain reporting an effect_index Nexus did not send last (once the echo has had time)
+    // plays something else, typically its firmware effect after an upload that did not land.
+    private void CheckEffectEchoLocked(Slv3DeviceRecord record, long nowMs)
+    {
+        if (!State.AirCount || record.EffectIndex is not { Length: 4 })
+        {
+            return;
+        }
+        var mac = Convert.ToHexString(record.Mac);
+        var reported = Convert.ToHexString(record.EffectIndex);
+        (string Sent, string Previous, long AtMs) sent;
+        lock (_effectsSent)
+        {
+            if (!_effectsSent.TryGetValue(mac, out sent))
+            {
+                return;
+            }
+        }
+        if (reported == sent.Sent || reported == sent.Previous)
+        {
+            if (_effectMismatchLogged.Remove(mac))
+            {
+                ServiceLog.Info($"[lianli-wireless] chain {mac} plays our effect {reported} again");
+            }
+            return;
+        }
+        if (nowMs - sent.AtMs < EffectEchoGraceMs
+            || (_effectMismatchLogged.TryGetValue(mac, out var logged) && logged == reported))
+        {
+            return;
+        }
+        _effectMismatchLogged[mac] = reported;
+        ServiceLog.Info($"[lianli-wireless] chain {mac} plays effect {reported}, not our {sent.Sent} sent {nowMs - sent.AtMs} ms ago");
     }
 
     private void BeginUpload()

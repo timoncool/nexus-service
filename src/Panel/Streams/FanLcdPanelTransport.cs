@@ -15,21 +15,30 @@ namespace Nexus.Service.Panel.Streams;
 /// </summary>
 public sealed class FanLcdPanelTransport : IStreamedPanelTransport, IOrientablePanelTransport
 {
+    /// <summary>Interval after which an unchanged frame is encoded and pushed again, as ApexOledStreamTransport does; it also bounds how late a rotation change shows.</summary>
+    internal const long KeepAliveMs = 1000;
+
     private readonly IFanLcdScreens _screens;
     private readonly string _screenSerial;
     private readonly BgraJpegEncoder _encoder = new(FanLcdContent.Size, FanLcdContent.Size);
     private readonly byte[] _frame;
+    private readonly byte[] _shown;
+    private bool _hasShown;
+    private long _lastPushMs;
+    private readonly Func<long> _clock;
     private readonly PanelOrientationFilter _orientation = new();
     private int _filled;
     private bool _disposed;
     private bool _encodeFailLogged;
 
-    public FanLcdPanelTransport(IFanLcdScreens screens, string screenSerial, string panelSerial)
+    public FanLcdPanelTransport(IFanLcdScreens screens, string screenSerial, string panelSerial, Func<long>? clock = null)
     {
         _screens = screens;
         _screenSerial = screenSerial;
         Serial = panelSerial;
         _frame = new byte[_encoder.FrameBytes];
+        _shown = new byte[_encoder.FrameBytes];
+        _clock = clock ?? (() => Environment.TickCount64);
     }
 
     public string Serial { get; }
@@ -72,6 +81,11 @@ public sealed class FanLcdPanelTransport : IStreamedPanelTransport, IOrientableP
 
     private void PushFrame()
     {
+        var now = _clock();
+        if (_hasShown && now - _lastPushMs < KeepAliveMs && _frame.AsSpan().SequenceEqual(_shown))
+        {
+            return;
+        }
         byte[] jpeg;
         try
         {
@@ -87,7 +101,14 @@ public sealed class FanLcdPanelTransport : IStreamedPanelTransport, IOrientableP
             return;
         }
         _encodeFailLogged = false;
-        _screens.PushPanelFrame(_screenSerial, jpeg);
+        if (!_screens.PushPanelFrame(_screenSerial, jpeg))
+        {
+            _hasShown = false;
+            return;
+        }
+        _frame.CopyTo(_shown, 0);
+        _hasShown = true;
+        _lastPushMs = now;
     }
 
     private bool Attached() => _screens.AttachedSerials().Contains(_screenSerial, StringComparer.OrdinalIgnoreCase);
