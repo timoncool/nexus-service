@@ -20,6 +20,8 @@ namespace Nexus.Service.Lighting.Rgb;
 public sealed class OpenRgbProcessManager : IDisposable
 {
     public const int DefaultPort = 6742;
+    /// <summary>Daemon port while Nexus brokers the SDK port itself (<see cref="Nexus.Service.Persistence.DevicesSettings.OpenRgbBroker"/>).</summary>
+    public const int BrokerDaemonPort = 6741;
 
     private static readonly TimeSpan StableUptime = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan InitialBackoff = TimeSpan.FromSeconds(1);
@@ -50,7 +52,11 @@ public sealed class OpenRgbProcessManager : IDisposable
         _exePath = overrideExePath ?? ResolveDefaultPath();
         _store = store;
         _gate = gate;
+        DaemonPort = store?.Load().Devices.OpenRgbBroker == true ? BrokerDaemonPort : DefaultPort;
     }
+
+    /// <summary>The port the daemon serves the SDK on, fixed for the process lifetime.</summary>
+    public int DaemonPort { get; }
 
     public bool IsAvailable => (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() || OperatingSystem.IsLinux()) && File.Exists(_exePath);
 
@@ -670,7 +676,7 @@ public sealed class OpenRgbProcessManager : IDisposable
             };
             psi.ArgumentList.Add("--server");
             psi.ArgumentList.Add("--server-port");
-            psi.ArgumentList.Add(DefaultPort.ToString());
+            psi.ArgumentList.Add(DaemonPort.ToString());
             psi.ArgumentList.Add("--noautoconnect");
             psi.ArgumentList.Add("--config");
             psi.ArgumentList.Add(configDir);

@@ -788,6 +788,7 @@ app.MapConflictEndpoints();
 app.MapSessionEndpoints();
 app.MapTryxEndpoints();
 app.MapSlv3Endpoints();
+app.MapOpenRgbLeaseEndpoints();
 app.MapSlv3LcdEndpoints();
 app.MapSlv3FlexLcdEndpoints();
 app.MapTlLcdEndpoints();

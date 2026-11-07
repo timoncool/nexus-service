@@ -1736,6 +1736,18 @@ public sealed class DevicesSettings
     /// </summary>
     public bool ShareUncontrolledOpenRgbDevices { get; set; }
 
+    /// <summary>
+    /// Nexus answers the OpenRGB SDK port itself and runs the daemon on a private one, so every
+    /// other SDK client goes through Nexus and sees only the devices leased to it. Read at start.
+    /// </summary>
+    public bool OpenRgbBroker { get; set; } = true;
+
+    /// <summary>OpenRGB device StableId -> SDK client name (as the client names itself) the device is leased to. A device not listed belongs to Nexus.</summary>
+    public Dictionary<string, string> OpenRgbLeases { get; set; } = new();
+
+    /// <summary>SDK client names seen on the broker, newest last, so a lease can be given to an app that is not connected right now.</summary>
+    public List<string> OpenRgbKnownClients { get; set; } = new();
+
     /// <summary>"{device name}#{same-name ordinal}" -> the "openrgb-N" id a serial- and location-less OpenRGB device first had, kept for good so its settings stay put when the list reorders.</summary>
     public Dictionary<string, string> OpenRgbPinnedIds { get; set; } = new();
 

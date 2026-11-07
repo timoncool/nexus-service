@@ -1258,6 +1258,7 @@ namespace Nexus.Service.Serialization;
 [JsonSerializable(typeof(Nexus.Service.Routes.Slv3LockRequest))]
 [JsonSerializable(typeof(Nexus.Service.Routes.Slv3ChannelRequest))]
 [JsonSerializable(typeof(Nexus.Service.Routes.Slv3RadioTuningRequest))]
+[JsonSerializable(typeof(Nexus.Service.Routes.OpenRgbOwnerRequest))]
 [JsonSerializable(typeof(Nexus.Service.Routes.Slv3FlexLcdResponse))]
 [JsonSerializable(typeof(Nexus.Service.Routes.Slv3FlexLcdRequest))]
 [JsonSerializable(typeof(Nexus.Service.Routes.Slv3LightingResponse))]

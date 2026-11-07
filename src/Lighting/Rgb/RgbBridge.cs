@@ -275,10 +275,16 @@ public sealed class RgbBridge : IDisposable
         Nexus.Service.Lighting.Mappings.ContributorFrameLayouts? contributorLayouts = null,
         FeatureGates? gates = null,
         Nexus.Service.Devices.DeviceControlGate? controlGate = null,
-        Nexus.Service.Peripherals.Hid.IHidEnumerator? hid = null)
+        Nexus.Service.Peripherals.Hid.IHidEnumerator? hid = null,
+        OpenRgbLeases? leases = null)
     {
         _proc = proc;
         _hid = hid;
+        _leases = leases;
+        if (leases is not null)
+        {
+            leases.ActiveChanged += OnLeasesChanged;
+        }
         _controller = controller;
         _engine = engine;
         _store = store;
@@ -1369,7 +1375,7 @@ public sealed class RgbBridge : IDisposable
                     continue;
                 }
 
-                if (OpenRgbZoneSupport.IsFullyUncontrolled(dev, settingsSnapshot))
+                if (OpenRgbZoneSupport.IsFullyUncontrolled(dev, settingsSnapshot) || IsLeasedNow(dev))
                 {
                     continue;
                 }
@@ -1925,6 +1931,39 @@ public sealed class RgbBridge : IDisposable
     }
 
     /// <summary>Drops the dedup baseline so the next frame always pushes, e.g. when a device re-enters control.</summary>
+    private readonly OpenRgbLeases? _leases;
+
+    private bool IsLeasedNow(RgbDevice dev) => _leases is not null && _leases.Active.Contains(dev.StableId);
+
+    // A device whose lease ended is Nexus's again: Direct mode is re-applied (the lessee may have
+    // switched its mode) and its baseline dropped so the next frame is written in full.
+    private void OnLeasesChanged(IReadOnlyCollection<string> taken, IReadOnlyCollection<string> released)
+    {
+        if (released.Count == 0)
+        {
+            return;
+        }
+        var stableIds = _physStableIds;
+        lock (_lock)
+        {
+            foreach (var dev in _devices)
+            {
+                if (released.Contains(dev.StableId))
+                {
+                    _directModeApplied.Remove(dev.Address);
+                }
+            }
+        }
+        foreach (var kv in stableIds)
+        {
+            if (released.Contains(kv.Value))
+            {
+                ForgetBaseline(kv.Key);
+            }
+        }
+        RequestTopologyRefresh();
+    }
+
     internal void ForgetBaseline(int physIdx)
     {
         _lastPushed.TryRemove(physIdx, out _);
@@ -2639,6 +2678,21 @@ public sealed class RgbBridge : IDisposable
         var disabled = settings.Devices.DisabledLightingDevices;
         var disabledCount = disabled.Count;
         var uncontrolled = settings.Devices.UncontrolledLightingDevices;
+        var leased = _leases?.Active;
+        if (leased is { Count: > 0 })
+        {
+            // A leased device is driven by its lessee; to Nexus's frame it is uncontrolled.
+            var withLeased = new List<string>(uncontrolled);
+            var stableIds = _physStableIds;
+            foreach (var f in deviceFrames)
+            {
+                if (stableIds.TryGetValue(f.PhysicalIndex, out var stable) && leased.Contains(stable))
+                {
+                    withLeased.Add(f.Id);
+                }
+            }
+            uncontrolled = withLeased;
+        }
         var uncontrolledCount = uncontrolled.Count;
         var devicePrefs = settings.Devices.LightingDevicePrefs;
         var globalBrightness = MasterBrightness.Resolve(settings);

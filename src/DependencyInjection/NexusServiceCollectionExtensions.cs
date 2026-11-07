@@ -726,9 +726,11 @@ public static class NexusServiceCollectionExtensions
         if (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() || OperatingSystem.IsLinux())
         {
             services.AddSingleton<Nexus.Service.Lighting.Rgb.OpenRgbProcessManager>();
-            services.AddSingleton<Nexus.Service.Lighting.Rgb.IRgbController>(_ =>
-                new Nexus.Service.Lighting.Rgb.OpenRgbController());
+            services.AddSingleton<Nexus.Service.Lighting.Rgb.IRgbController>(sp =>
+                new Nexus.Service.Lighting.Rgb.OpenRgbController(port: sp.GetRequiredService<Nexus.Service.Lighting.Rgb.OpenRgbProcessManager>().DaemonPort));
+            services.AddSingleton<Nexus.Service.Lighting.Rgb.OpenRgbLeases>();
             services.AddSingleton<Nexus.Service.Lighting.Rgb.RgbBridge>();
+            services.AddHostedService<Nexus.Service.Lighting.Rgb.OpenRgbBroker>();
             services.AddSingleton(sp => new Nexus.Service.Lighting.Rgb.OpenRgbWriteHealthPoller(
                 sp.GetRequiredService<Nexus.Service.Lighting.LightingWriteHealth>(),
                 sp.GetRequiredService<Nexus.Service.Lighting.Rgb.IRgbController>() as Nexus.Service.Lighting.Rgb.IOpenRgbWriteHealthTransport
@@ -2963,6 +2965,11 @@ public static class NexusServiceCollectionExtensions
         services.AddSingleton<Nexus.Service.Mcp.IMcpTool, Nexus.Service.Mcp.Tools.GetLightingStateTool>();
         services.AddSingleton<Nexus.Service.Mcp.IMcpTool, Nexus.Service.Mcp.Tools.GetPanelsTool>();
         services.AddSingleton<Nexus.Service.Mcp.IMcpTool, Nexus.Service.Mcp.Tools.SetPanelStyleTool>();
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() || OperatingSystem.IsLinux())
+        {
+            services.AddSingleton<Nexus.Service.Mcp.IMcpTool, Nexus.Service.Mcp.Tools.GetDeviceOwnersTool>();
+            services.AddSingleton<Nexus.Service.Mcp.IMcpTool, Nexus.Service.Mcp.Tools.SetDeviceOwnerTool>();
+        }
         services.AddSingleton<Nexus.Service.Mcp.IMcpTool, Nexus.Service.Mcp.Tools.ApplyCoolingPresetTool>();
         services.AddSingleton<Nexus.Service.Mcp.IMcpTool, Nexus.Service.Mcp.Tools.SetGlobalFanSpeedTool>();
         services.AddSingleton<Nexus.Service.Mcp.IMcpTool, Nexus.Service.Mcp.Tools.SetFanCurveTool>();
