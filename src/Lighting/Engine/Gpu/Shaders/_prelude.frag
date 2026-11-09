@@ -143,8 +143,15 @@ vec3 tonemap(vec3 c) {
 // composed source whose body defines none, since a defined gainOut() may not
 // call an undefined function on every GLSL ES compiler.
 float outGain();
-vec3 gainOut(vec3 c) {
+// u_heat is the service's heat tint, 0 on a cool PC: a warm one pulls the output toward red and keeps
+// each pixel's brightness, so the pattern and its motion stay.
+uniform float u_heat;
+vec3 gained(vec3 c) {
     return clamp(c * outGain(), 0.0, 1.0);
+}
+vec3 gainOut(vec3 c) {
+    vec3 o = gained(c);
+    return mix(o, max(o.r, max(o.g, o.b)) * vec3(1.0, 0.05, 0.02), clamp(u_heat, 0.0, 1.0));
 }
 
 // Post-process every effect's output: blend from palette-shifted colour

@@ -470,6 +470,41 @@ public static class LightingRoutes
             PanelTopics.BroadcastLighting(hub);
             return Results.Ok(ApiResponse.Ok());
         }).AllowPanel();
+        app.MapGet("/lighting/aurora-sync", (Nexus.Service.Persistence.IConfigStore store) =>
+            Results.Json(store.Load().Lighting.AuroraSync ?? new(), Nexus.Service.Serialization.AppJsonContext.Default.AuroraSyncSettings)).AllowPanel();
+        app.MapPost("/lighting/aurora-sync", (Nexus.Service.Persistence.AuroraSyncSettings body,
+            Nexus.Service.Persistence.IConfigStore store, MultiplexHub hub) =>
+        {
+            if (body.Port is < 1024 or > 65535)
+            {
+                return Results.BadRequest(ApiResponse.Fail("port must be 1024..65535"));
+            }
+            store.Update(s => s.Lighting.AuroraSync = new() { Enabled = body.Enabled, Port = body.Port });
+            PanelTopics.BroadcastLighting(hub);
+            return Results.Ok(ApiResponse.Ok());
+        }).AllowPanel();
+        app.MapGet("/lighting/heat-tint", (Nexus.Service.Persistence.IConfigStore store) =>
+            Results.Json(store.Load().Lighting.HeatTint ?? new(), Nexus.Service.Serialization.AppJsonContext.Default.HeatTintSettings)).AllowPanel();
+        app.MapPost("/lighting/heat-tint", (Nexus.Service.Persistence.HeatTintSettings body,
+            Nexus.Service.Persistence.IConfigStore store, MultiplexHub hub) =>
+        {
+            var sensors = new List<Nexus.Service.Persistence.SensorBinding>();
+            foreach (var b in body.Sensors ?? new())
+            {
+                if (b is { IsUsable: true })
+                {
+                    sensors.Add(b.Copy());
+                }
+            }
+            if (sensors.Count == 0)
+            {
+                return Results.BadRequest(ApiResponse.Fail("sensors must name at least one reading with max above min"));
+            }
+            // Replace the object, never mutate it: the controller reads a snapshot.
+            store.Update(s => s.Lighting.HeatTint = new() { Enabled = body.Enabled, Strength = Math.Clamp(body.Strength, 0f, 1f), Sensors = sensors });
+            PanelTopics.BroadcastLighting(hub);
+            return Results.Ok(ApiResponse.Ok());
+        }).AllowPanel();
         // Render-GPU selection (which card runs the lighting shaders). Host-only
         // (LocalhostOnly) -- a paired phone must not flip the host's GPU. The POST
         // persists + writes the OS preference; applying it needs a service restart

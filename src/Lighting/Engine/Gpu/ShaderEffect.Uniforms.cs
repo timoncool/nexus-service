@@ -13,6 +13,7 @@ internal sealed class UniformLocations
     public int Intensity = -1;
     public int Hue = -1;
     public int Colorize = -1;
+    public int Heat = -1;
     public int Saturation = -1;
     public int Contrast = -1;
     public int AudioLevel = -1;
@@ -31,7 +32,7 @@ internal sealed class UniformLocations
     public int HighPeak = -1;
 
     public void Reset() =>
-        Resolution =  Time =  Speed =  Intensity =  Hue =  Colorize =  Saturation =  Contrast =  AudioLevel =  AudioBass =  AudioMid =  AudioHigh =  AudioBeat =  AudioBoost =  Spectrum =  Spectrum64 =  SpectrumL64 =  SpectrumR64 =  SpecHist =  BassPeak =  MidPeak =  HighPeak = -1;
+        Resolution =  Time =  Speed =  Intensity =  Hue =  Colorize =  Heat =  Saturation =  Contrast =  AudioLevel =  AudioBass =  AudioMid =  AudioHigh =  AudioBeat =  AudioBoost =  Spectrum =  Spectrum64 =  SpectrumL64 =  SpectrumR64 =  SpecHist =  BassPeak =  MidPeak =  HighPeak = -1;
 
     public void Lookup(GL gl, uint prog)
     {
@@ -41,6 +42,7 @@ internal sealed class UniformLocations
         Intensity = gl.GetUniformLocation(prog, "u_intensity");
         Hue = gl.GetUniformLocation(prog, "u_hue");
         Colorize = gl.GetUniformLocation(prog, "u_colorize");
+        Heat = gl.GetUniformLocation(prog, "u_heat");
         Saturation = gl.GetUniformLocation(prog, "u_saturation");
         Contrast = gl.GetUniformLocation(prog, "u_contrast");
         AudioLevel = gl.GetUniformLocation(prog, "u_audioLevel");
@@ -115,6 +117,10 @@ public sealed partial class ShaderEffect
         if (u.Saturation >= 0)
         {
             gl.Uniform1(u.Saturation, ClampBase("u_saturation", Saturation));
+        }
+        if (u.Heat >= 0)
+        {
+            gl.Uniform1(u.Heat, Nexus.Service.Lighting.Heat.HeatTint.Level);
         }
         if (u.Contrast >= 0)
         {

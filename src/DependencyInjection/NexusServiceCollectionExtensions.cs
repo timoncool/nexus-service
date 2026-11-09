@@ -119,6 +119,8 @@ public static class NexusServiceCollectionExtensions
 #endif
         // Idle until a lighting shader reads a sensor uniform; see SensorFeed.
         services.AddSingleton(sp => new Nexus.Service.Lighting.Engine.SensorFeed(sp.GetRequiredService<ISensorProvider>()));
+        services.AddHostedService<Nexus.Service.Lighting.Heat.HeatTintController>();
+        services.AddHostedService<Nexus.Service.Lighting.Rgb.AuroraPaletteFeed>();
         services.AddSingleton<ProcessMonitor>();
         services.AddHostedService(sp => sp.GetRequiredService<ProcessMonitor>());
         services.AddSingleton<Nexus.Service.Activity.GpuProcessMonitor>();

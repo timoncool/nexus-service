@@ -826,6 +826,10 @@ public sealed class LightingSettings
     /// <summary>Dims to <see cref="IdleDimSettings.Level"/> percent while the PC is idle, see
     /// <see cref="Nexus.Service.Lighting.IdleDim.IdleDimController"/>. Not captured into presets.</summary>
     public IdleDimSettings IdleDim { get; set; } = new();
+    /// <summary>Pulls every effect toward red as the bound sensors warm up, see <see cref="Nexus.Service.Lighting.Heat.HeatTint"/>. Not captured into presets.</summary>
+    public HeatTintSettings HeatTint { get; set; } = new();
+    /// <summary>Hands Aurora the lighting's main colours, see <see cref="Nexus.Service.Lighting.Rgb.AuroraPaletteFeed"/>.</summary>
+    public AuroraSyncSettings AuroraSync { get; set; } = new();
     public Dictionary<string, int> SpeedScale { get; set; } = new();
     public bool SpeedEnabled { get; set; } = InstallDefaults.Lighting.SpeedEnabled;
     public int FrameRate { get; set; } = InstallDefaults.Lighting.FrameRate;
@@ -951,6 +955,28 @@ public sealed class BrightnessSchedule
     public bool SunShiftOn => SunShift ?? Nexus.Service.Lighting.MasterBrightness.IsDefaultSchedule(Points);
     /// <summary>Place the sun times are computed for; null follows the IP location.</summary>
     public WeatherSavedLocation? SunLocation { get; set; }
+}
+
+public sealed class AuroraSyncSettings
+{
+    public bool Enabled { get; set; }
+    /// <summary>Port of Aurora's HTTP listener.</summary>
+    public int Port { get; set; } = 9088;
+}
+
+public sealed class HeatTintSettings
+{
+    public bool Enabled { get; set; }
+    /// <summary>Share of the pull to red at the top of a sensor's range, 0..1.</summary>
+    public float Strength { get; set; } = 0.85f;
+    /// <summary>The readings that count as heat, each over its own range; the hottest wins.</summary>
+    public List<SensorBinding> Sensors { get; set; } = DefaultSensors();
+
+    public static List<SensorBinding> DefaultSensors() => new()
+    {
+        new SensorBinding { Category = "quick", Sensor = "summary/cpu-temp", Min = 60f, Max = 90f },
+        new SensorBinding { Category = "quick", Sensor = "summary/gpu-temp", Min = 60f, Max = 85f },
+    };
 }
 
 public sealed class IdleDimSettings
