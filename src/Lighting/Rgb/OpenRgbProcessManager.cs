@@ -79,7 +79,7 @@ public sealed class OpenRgbProcessManager : IDisposable
     /// Kill any OpenRGB-headless processes left behind by a crashed or force-killed
     /// service. Called on startup before spawning a new instance.
     /// </summary>
-    public static void CleanupOrphans()
+    public static void CleanupOrphans(string? exePath = null)
     {
         try
         {
@@ -88,6 +88,11 @@ public sealed class OpenRgbProcessManager : IDisposable
             {
                 try
                 {
+                    // Another Nexus on the machine (a test host, a second install) runs its daemon from its own folder.
+                    if (exePath is not null && !IsSameExecutable(proc, exePath))
+                    {
+                        continue;
+                    }
                     proc.Kill(entireProcessTree: true);
                     if (proc.WaitForExit(1000))
                     {
@@ -106,6 +111,19 @@ public sealed class OpenRgbProcessManager : IDisposable
             }
         }
         catch { }
+    }
+
+    private static bool IsSameExecutable(Process proc, string exePath)
+    {
+        try
+        {
+            var path = proc.MainModule?.FileName;
+            return path is null || string.Equals(Path.GetFullPath(path), Path.GetFullPath(exePath), StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or NotSupportedException)
+        {
+            return true;
+        }
     }
 
     public bool IsRunning
@@ -634,7 +652,7 @@ public sealed class OpenRgbProcessManager : IDisposable
             }
 
             CleanupProcessLocked();
-            CleanupOrphans();
+            CleanupOrphans(_exePath);
 
             // Use a service-owned config directory so we don't collide with any
             // user-installed OpenRGB. Lives under %ProgramData%\Nexus on Windows.
