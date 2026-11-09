@@ -38,7 +38,12 @@ public sealed class OpenRgbBroker : BackgroundService
         : this(leases, () => bridge.Devices, proc.DaemonPort, OpenRgbProcessManager.DefaultPort,
             store.Load().Devices.OpenRgbBroker && proc.DaemonPort != OpenRgbProcessManager.DefaultPort)
     {
+        _proc = proc;
     }
+
+    // The daemon the clients proxy to. A client (Aurora) may connect while Nexus has the daemon
+    // stopped (blackout, idle): the broker brings it back up so the client always reaches its devices.
+    private readonly OpenRgbProcessManager? _proc;
 
     internal OpenRgbBroker(OpenRgbLeases leases, Func<IReadOnlyList<RgbDevice>> devices, int daemonPort, int listenPort, bool enabled)
     {
@@ -122,15 +127,43 @@ public sealed class OpenRgbBroker : BackgroundService
         }
     }
 
+    // The daemon may be down when a client connects (Nexus stopped it on blackout/idle, or it is still
+    // starting). Ask the process manager to (re)start it and retry the connect until its port answers.
+    // A failed ConnectAsync leaves the socket unusable, so each attempt gets a fresh TcpClient.
+    private async Task<TcpClient> ConnectUpstreamAsync(CancellationToken ct)
+    {
+        const int attempts = 40; // ~8s: the daemon's own detection pass takes a few seconds to open the port
+        for (var i = 0; ; i++)
+        {
+            _proc?.Start();
+            var upstream = new TcpClient();
+            try
+            {
+                await upstream.ConnectAsync(IPAddress.Loopback, _daemonPort, ct).ConfigureAwait(false);
+                return upstream;
+            }
+            catch (SocketException) when (i < attempts && !ct.IsCancellationRequested)
+            {
+                upstream.Dispose();
+                await Task.Delay(200, ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                upstream.Dispose();
+                throw;
+            }
+        }
+    }
+
     private async Task RunSessionAsync(long id, TcpClient client, CancellationToken ct)
     {
         using var clientConn = client;
-        using var upstream = new TcpClient();
         using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        TcpClient? upstream = null;
         Session? session = null;
         try
         {
-            await upstream.ConnectAsync(IPAddress.Loopback, _daemonPort, sessionCts.Token).ConfigureAwait(false);
+            upstream = await ConnectUpstreamAsync(sessionCts.Token).ConfigureAwait(false);
             session = new Session(clientConn.GetStream(), upstream.GetStream());
             lock (_gate)
             {
@@ -155,6 +188,7 @@ public sealed class OpenRgbBroker : BackgroundService
                 ServiceLog.Info($"[openrgb-broker] '{name}' disconnected");
                 _leases.ClientDisconnected(id);
             }
+            upstream?.Dispose();
         }
     }
 
