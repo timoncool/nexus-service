@@ -33,14 +33,14 @@ Nexus Fast is a fork of [Nexus](https://github.com/hello-nexus/nexus) (service a
 
 Nexus Fast plays well with [Aurora](https://github.com/Aurora-RGB/Aurora) (tested on v384). From a lighting card's menu, hand the keyboard and mouse to Aurora ("Give to Aurora (RGB.NET)"). Aurora then sees and drives only those, and Nexus drives the rest: fans, pump, memory, motherboard, monitor. Nobody overwrites anybody's colours, and Aurora spends no time on devices that are not its own.
 
-The author's Aurora desktop profile is included, cleaned up and checked — [extras/aurora/nexus-fast-desktop.json](extras/aurora/nexus-fast-desktop.json):
+The author's Aurora desktop profile is included, cleaned up and checked — [timoncool/aurora-desktop-profile](https://github.com/timoncool/aurora-desktop-profile):
 - an audio equalizer on the main block and on the numpad;
 - Ctrl / Win / Alt shortcut hints;
 - particles and key-press fade;
 - letters blinking while Caps Lock is on;
 - two-zone breathing background.
 
-To install: close Aurora, put the file into `%APPDATA%\Aurora\Profiles\desktop\`, start Aurora and pick "Nexus Fast Desktop" among the desktop profiles.
+To install: close Aurora, put the file into `%APPDATA%\Aurora\Profiles\desktop\`, start Aurora and pick "Nerual Desktop" among the desktop profiles.
 
 ## Numbers
 
