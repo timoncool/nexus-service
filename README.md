@@ -120,7 +120,7 @@ All against Nexus of 5 November 2026 (`hello-nexus/nexus-service` `4bde382b`, `h
 
 ## Build from source
 
-The service is .NET 10 (AOT), the UI is Vite. Put `nexus-service` (branch `lighting-accent`) and `nexus-web` (branch `share-lighting-accent`) side by side, build the UI with `npm run build:service` and the service with `dotnet publish Nexus.Service.csproj -c Release -r win-x64`. The original build notes are in [docs/UPSTREAM_README.md](docs/UPSTREAM_README.md).
+The service is .NET 10 (AOT), the UI is Vite. Put `nexus-service` (branch `lighting-accent`), `nexus-web` (branch `share-lighting-accent`) and the original [`nexus-overlay`](https://github.com/hello-nexus/nexus-overlay) (commit `f50a086`, the desktop-widget host the service publish builds too) side by side. Build the UI with `npm run build:service`, then run `tools\publish-windows.cmd`: it sets up the Visual Studio C++ environment and publishes the service with the overlay. If the `dotnet` on PATH is older than .NET 10, point `NEXUS_DOTNET` at a .NET 10 SDK folder first. The original build notes are in [docs/UPSTREAM_README.md](docs/UPSTREAM_README.md).
 
 ## Other Projects by [@timoncool](https://github.com/timoncool)
 

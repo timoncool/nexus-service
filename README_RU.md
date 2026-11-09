@@ -120,7 +120,7 @@ Nexus Fast дружит с [Aurora](https://github.com/Aurora-RGB/Aurora) (пр�
 
 ## Сборка из исходников
 
-Служба — .NET 10 (AOT), интерфейс — Vite. Положите рядом `nexus-service` (ветка `lighting-accent`) и `nexus-web` (ветка `share-lighting-accent`), соберите интерфейс `npm run build:service`, службу — `dotnet publish Nexus.Service.csproj -c Release -r win-x64`. Подробности сборки оригинала — в [docs/UPSTREAM_README.md](docs/UPSTREAM_README.md).
+Служба — .NET 10 (AOT), интерфейс — Vite. Положите рядом `nexus-service` (ветка `lighting-accent`), `nexus-web` (ветка `share-lighting-accent`) и оригинальный [`nexus-overlay`](https://github.com/hello-nexus/nexus-overlay) (коммит `f50a086`; это хост виджетов рабочего стола, публикация службы собирает и его). Соберите интерфейс `npm run build:service`, затем запустите `tools\publish-windows.cmd`: он поднимает окружение Visual Studio C++ и публикует службу вместе с оверлеем. Если `dotnet` в PATH старше .NET 10, сначала укажите в `NEXUS_DOTNET` папку с .NET 10 SDK. Подробности сборки оригинала — в [docs/UPSTREAM_README.md](docs/UPSTREAM_README.md).
 
 ## Другие проекты [@timoncool](https://github.com/timoncool)
 
