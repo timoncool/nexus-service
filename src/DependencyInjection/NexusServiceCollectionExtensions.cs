@@ -118,7 +118,7 @@ public static class NexusServiceCollectionExtensions
 #error No ISensorProvider for this target - wire one when adding a platform.
 #endif
         // Idle until a lighting shader reads a sensor uniform; see SensorFeed.
-        services.AddSingleton(sp => new Nexus.Service.Lighting.Engine.SensorFeed(sp.GetRequiredService<ISensorProvider>()));
+        services.AddSingleton(sp => new Nexus.Service.Lighting.Engine.SensorFeed(sp.GetRequiredService<ISensorProvider>(), () => sp.GetService<IFanControlProvider>()));
         services.AddHostedService<Nexus.Service.Lighting.Heat.HeatTintController>();
         services.AddHostedService<Nexus.Service.Lighting.Rgb.AuroraPaletteFeed>();
         services.AddSingleton<ProcessMonitor>();
