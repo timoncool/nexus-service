@@ -865,7 +865,8 @@ public static class MonitoringHistoryRoutes
 
     // mem-temp is one series averaging every kind=="ram" component at each
     // slot (mean of avgs, max of maxes); drive-temp is one series per
-    // kind=="storage" component, id-scoped like gpu/fan. pointsForComponent
+    // kind=="storage" component and cooler-temp one per kind=="cooler"
+    // probe, id-scoped like gpu/fan. pointsForComponent
     // abstracts over the raw-window path (decimating merged samples inline)
     // and the wide-window path (db-slot + tail merge), so the aggregation
     // logic below runs identically for both.
@@ -891,18 +892,30 @@ public static class MonitoringHistoryRoutes
             }
         }
 
-        var usedDriveIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var (componentId, info) in meta.Where(kv => kv.Value.Kind == "storage").OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        AddPerComponentTempSeries(output, meta, pointsForComponent, filter, "storage", "drive-temp");
+        AddPerComponentTempSeries(output, meta, pointsForComponent, filter, "cooler", "cooler-temp");
+    }
+
+    private static void AddPerComponentTempSeries(
+        List<MetricSeriesWire> output,
+        IReadOnlyDictionary<string, (string Kind, string Name)> meta,
+        Func<string, IReadOnlyList<MetricPoint>> pointsForComponent,
+        IReadOnlySet<string>? filter,
+        string componentKind,
+        string wireKind)
+    {
+        var usedIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (componentId, info) in meta.Where(kv => kv.Value.Kind == componentKind).OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
-            var wireId = $"drive-temp:{ResolveUniqueSanitizedId(componentId, usedDriveIds)}";
-            if (!MatchesFilter(wireId, "drive-temp", filter))
+            var wireId = $"{wireKind}:{ResolveUniqueSanitizedId(componentId, usedIds)}";
+            if (!MatchesFilter(wireId, wireKind, filter))
             {
                 continue;
             }
             output.Add(new MetricSeriesWire
             {
                 Id = wireId,
-                Kind = "drive-temp",
+                Kind = wireKind,
                 Name = info.Name,
                 Points = ToWirePoints(pointsForComponent(componentId), wholeNumbers: false),
             });

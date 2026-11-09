@@ -188,6 +188,23 @@ public sealed class SystemMetricsSource : IMetricsSource
             result.Add(new ComponentTempReading($"ram:{i}", "ram", ramSensors[i].Name, ramSensors[i].Value));
         }
 
+        try
+        {
+            foreach (var probe in _fans.GetDeviceTemperatureSources())
+            {
+                if (!string.IsNullOrEmpty(probe.DeviceId) && TemperatureSourceFilter.IsPlausible(probe.Value))
+                {
+                    var name = string.IsNullOrEmpty(probe.DeviceName) ? probe.Name : $"{probe.DeviceName} {probe.Name}";
+                    result.Add(new ComponentTempReading(probe.Id, "cooler", name, probe.Value));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Hub state is read while its poll thread mutates it; a torn read must not drop the drive and RAM rows.
+            ServiceLog.Warn($"[metrics-source] hub probe read failed: {ex.Message}");
+        }
+
         return result;
     }
 

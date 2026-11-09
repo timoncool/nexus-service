@@ -339,6 +339,25 @@ public class MonitoringHistoryRouteResponseTests
     }
 
     [Fact]
+    public void BuildHistoryResponse_CoolerTempSeries_OnePerHubProbe()
+    {
+        var db = new[]
+        {
+            ComponentSample(0,
+                new ComponentTempReading("storage:ABC123", "storage", "Samsung 990 Pro", 45),
+                new ComponentTempReading("lianli-wireless:AA:coolant", "cooler", "HydroShift II Liquid", 37)),
+        };
+
+        var response = MonitoringHistoryRoutes.BuildHistoryResponse(db, Array.Empty<MetricSample>(), 0, 0, 600, new HashSet<string> { "cooler-temp" }, NoLuids);
+
+        var coolant = Assert.Single(response.Series);
+        Assert.Equal("cooler-temp:lianli-wireless:AA:coolant", coolant.Id);
+        Assert.Equal("cooler-temp", coolant.Kind);
+        Assert.Equal("HydroShift II Liquid", coolant.Name);
+        Assert.Equal(37, coolant.Points.Single().Avg);
+    }
+
+    [Fact]
     public void BuildHistoryResponse_DriveTempSeries_SanitizesSlashesInTheComponentId()
     {
         var db = new[] { ComponentSample(0, new ComponentTempReading("storage:/nvme/0", "storage", "NVMe 0", 42)) };

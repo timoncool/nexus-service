@@ -21,7 +21,7 @@ public sealed record FanReading(string FanId, string Name, int? Rpm, int? Duty);
 /// <summary>One storage or RAM component's temperature reading within a
 /// MetricSample. ComponentId is the same stable id used elsewhere for that
 /// component (SmartDriveInfo.Id for storage, "ram:&lt;index&gt;" for RAM);
-/// Kind is "storage" or "ram".</summary>
+/// Kind is "storage", "ram" or "cooler" (a cooling hub's own probe, such as AIO coolant).</summary>
 public sealed record ComponentTempReading(string ComponentId, string Kind, string Name, double? ValueC);
 
 /// <summary>
