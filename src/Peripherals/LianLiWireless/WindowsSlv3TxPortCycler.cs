@@ -4,21 +4,21 @@ using Nexus.Service.QSeries;
 
 namespace Nexus.Service.Peripherals.LianLiWireless;
 
-/// <summary>IOCTL_USB_HUB_CYCLE_PORT on one dongle half's own port (TX 0416:8040 or RX 0416:8041) after an exact identity check, with no pnputil fallback.</summary>
+/// <summary>IOCTL_USB_HUB_CYCLE_PORT on the TX's own port after an exact TX identity check, with no pnputil fallback.</summary>
 internal sealed class WindowsSlv3TxPortCycler : ISlv3TxPortCycler
 {
     public bool TryResolve(Slv3PortInfo txPort, out string instanceId, out string target)
     {
         instanceId = "";
-        if (txPort.Role is not (Slv3DongleRole.Tx or Slv3DongleRole.Rx))
+        if (txPort.Role != Slv3DongleRole.Tx)
         {
-            target = $"{txPort.PortName} is not a dongle half";
+            target = $"{txPort.PortName} is not the TX";
             return false;
         }
         var id = CfgMgr32.GetInterfaceInstanceId(txPort.PortName);
-        if (!Slv3TxPortIdentity.IsDongleInstanceId(txPort.Role, id))
+        if (!Slv3TxPortIdentity.IsTxInstanceId(id))
         {
-            target = id.Length == 0 ? $"no devnode for {txPort.PortName}" : $"{id} is not the dongle's {txPort.Role}";
+            target = id.Length == 0 ? $"no devnode for {txPort.PortName}" : $"{id} is not a 0416:8040 device";
             return false;
         }
         if (!CfgMgr32.TryGetUsbHubPort(id, out var hub, out var port))
@@ -38,9 +38,9 @@ internal sealed class WindowsSlv3TxPortCycler : ISlv3TxPortCycler
 
     public bool TryCycle(string instanceId, out string detail)
     {
-        if (!Slv3TxPortIdentity.IsTxInstanceId(instanceId) && !Slv3TxPortIdentity.IsRxInstanceId(instanceId))
+        if (!Slv3TxPortIdentity.IsTxInstanceId(instanceId))
         {
-            detail = $"{instanceId} is not a 0416:8040 or 0416:8041 device";
+            detail = $"{instanceId} is not a 0416:8040 device";
             return false;
         }
         return QSeriesUsbPortCycle.TryCycle(instanceId, out detail);

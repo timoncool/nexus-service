@@ -813,17 +813,6 @@ public sealed partial class Slv3Hub : IDisposable
         {
             return;
         }
-        var resets = _txHungResets;
-        var hungMinutes = (nowMs - _txHungSinceMs) / 60_000;
-        if (StartTxPortCycleLocked(cycler, txPort, nowMs, resets, hungMinutes))
-        {
-            _txHungResets = 0;
-            _txHungSinceMs = 0;
-        }
-    }
-
-    private bool StartTxPortCycleLocked(ISlv3TxPortCycler cycler, Slv3PortInfo txPort, long nowMs, int resets, long hungMinutes)
-    {
         var hold = PortCycleHoldReason(nowMs);
         if (hold is not null)
         {
@@ -832,7 +821,7 @@ public sealed partial class Slv3Hub : IDisposable
                 _portCycleQuietLogged = true;
                 ServiceLog.Info($"[lianli-wireless] TX port cycle held back: {hold}");
             }
-            return false;
+            return;
         }
         _portCycleQuietLogged = false;
         var issued = PortCyclesInWindow(nowMs);
@@ -843,13 +832,16 @@ public sealed partial class Slv3Hub : IDisposable
                 _portCycleCapLogged = true;
                 ServiceLog.Warn($"[lianli-wireless] TX still hung after {issued} port cycle(s) in the last day, giving up: unplug and replug the module");
             }
-            return false;
+            return;
         }
         _portCycleCapLogged = false;
+        var resets = _txHungResets;
+        var hungMinutes = (nowMs - _txHungSinceMs) / 60_000;
         _nextPortCycleMs = nowMs + PortCycleSpacingMs;
+        _txHungResets = 0;
+        _txHungSinceMs = 0;
         Volatile.Write(ref _portCycleInFlight, 1);
         RunPortCycle(() => CycleTxPort(cycler, txPort, resets, hungMinutes));
-        return true;
     }
 
     // Runs without _lock: the hub IOCTL and the re-arrival wait can block for seconds.
@@ -880,7 +872,7 @@ public sealed partial class Slv3Hub : IDisposable
             Interlocked.Increment(ref _portCycles);
             ServiceLog.Warn($"[lianli-wireless] TX ignored {resets} RX reset(s) over {hungMinutes} min, cycling its USB port {target} ({slot}/{MaxPortCyclesPerWindow} today)");
             var ok = cycler.TryCycle(instanceId, out var detail);
-            ServiceLog.Warn($"[lianli-wireless] {txPort.Role} port cycle {(ok ? "done" : "failed")}: {detail}");
+            ServiceLog.Warn($"[lianli-wireless] TX port cycle {(ok ? "done" : "failed")}: {detail}");
         }
         catch (Exception ex)
         {
