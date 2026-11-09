@@ -101,6 +101,7 @@ All against Nexus of 5 November 2026 (`hello-nexus/nexus-service` `4bde382b`, `h
 
 **Fan and pump screens**
 - Ambient Glow design: the glass glows with the live colour of its fan's LEDs, no dark core and no saturation boost
+- The glow takes both light strips of a fan: a screen binding `cardA@from-to+cardB@from-to` puts each strip on its own half of the circle; `slotN_glowRotate` (0/90/180/270) turns the glow for fans mounted turned against the screen
 - Camera calibration: colour matrix, hue table `slotN_glowHueLut`, brightness curve `slotN_glowGamma`, glow brightness and saturation
 - HUD colours from colour-wheel schemes (complementary, triadic, analogous and more) checked for readability with APCA; white, averaged and flowing modes
 - Glass effects (neon, ring glow, glass, vignette, bevel, emboss and more) and blend modes (screen, overlay, difference…)
