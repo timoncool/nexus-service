@@ -26,6 +26,8 @@ Nexus Fast is a fork of [Nexus](https://github.com/hello-nexus/nexus) (service a
 - **Webcam screen calibration** — a hue table and brightness curve measured by a camera so the glass matches the LEDs
 - **Sensor rotation and layout editor** — a screen shows sensors in turn; drag, resize and rotate parts of the gauge
 - **OpenRGB device hand-off** — Nexus answers the OpenRGB SDK port and gives a chosen device to another app (Aurora, SignalRGB…); each app sees only its own
+- **Heat tints the lighting** — the warmer the CPU or GPU, the further every effect shifts toward red; pattern and motion stay, and the mode survives an effect change
+- **Aurora in the PC's colours** — Nexus hands Aurora the main colours of the current lighting, so the keyboard and mouse background flows in them while every Aurora effect keeps working
 - **Select-all lock** — keep a lighting card out of Select all
 
 ## Works with Aurora
@@ -116,6 +118,8 @@ All against Nexus of 5 November 2026 (`hello-nexus/nexus-service` `4bde382b`, `h
 - A client app stays connected when the OpenRGB daemon exits: its device list empties and fills back once the restarted daemon has settled, so Aurora needs no restart
 - Uncontrolled OpenRGB devices stay visible to other SDK clients
 - The main effect is not rendered when nothing reads it (preview closed, every driven device on its own pinned look); screens that follow LED colours read `/lighting/output?leds=1`, a stream of LED colours without the canvas
+- Heat tint: the `lighting.heatTint` setting (a switch in Settings → Lighting and cooling, REST `GET/POST /lighting/heat-tint`) — sensors with ranges, the hottest wins; the shift sits in the shaders' shared output function (`gainOut`, uniform `u_heat`), so it works on every built-in effect with no extra pass. Studio-made and custom shaders are left alone
+- Colours for Aurora: the `lighting.auroraSync` setting (a switch in the same place, REST `GET/POST /lighting/aurora-sync`) — four times a second up to four main hues of Nexus's own devices go to `http://127.0.0.1:9088/variables` as numbers `nexus_c1_r` … `nexus_c4_b` (0..1); devices handed to another app are left out
 - Select-all lock for lighting cards
 - Panel accent follows a lighting card's live colour; panel style MCP tools
 
