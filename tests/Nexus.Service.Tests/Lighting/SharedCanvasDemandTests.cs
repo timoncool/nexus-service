@@ -146,4 +146,31 @@ public class SharedCanvasDemandTests
             Assert.Equal(255, leased.LedBytes.ToArray()[1]);
         }
     }
+
+    [Fact]
+    public async Task An_led_stream_reader_gets_device_colours_alone_and_does_not_bring_the_shared_render_back()
+    {
+        using var gpu = Context();
+        var pins = new DevicePinTracker();
+        pins.Set("dev-a", new DevicePin { Kind = DevicePinKinds.Animate, Effect = "red" });
+        var (engine, renders) = Rig(gpu, pins, Device(0, "dev-a"));
+        using (engine)
+        {
+            byte[]? led = null;
+            engine.LedFrameIntervalMs = 0;
+            engine.OnLedFrame += f => Volatile.Write(ref led, f.ToArray());
+            await Frames(engine, 3);
+            Assert.Null(Volatile.Read(ref led));
+
+            engine.LedsWatched = () => true;
+            Assert.Equal(0, await RendersOver(engine, renders, 5));
+            var frame = Volatile.Read(ref led);
+            Assert.NotNull(frame);
+            // 0x03, a 0x0 canvas, then one device of 5 LEDs its own look painted red.
+            Assert.Equal(new byte[] { 0x03, 0, 0, 0, 0, 1 }, frame![..6]);
+            Assert.Equal(5 + 1 + 3 + 5 * 3, frame.Length);
+            Assert.Equal(5, frame[7] | (frame[8] << 8));
+            Assert.Equal(255, frame[9]);
+        }
+    }
 }

@@ -55,7 +55,10 @@ public static class WebSocketRoutes
                 return;
             }
             using WebSocket socket = await ctx.WebSockets.AcceptWebSocketAsync();
-            var hub = ctx.RequestServices.GetRequiredService<LightingOutputHub>();
+            // ?leds=1: device LED colours alone, for screens that follow a card without the canvas.
+            WebSocketHub hub = ctx.Request.Query["leds"] == "1"
+                ? ctx.RequestServices.GetRequiredService<LightingLedHub>()
+                : ctx.RequestServices.GetRequiredService<LightingOutputHub>();
             await RunUntilShutdownAsync(ctx, ct => hub.HandleClientAsync(socket, cancellationToken: ct));
         });
 

@@ -80,7 +80,7 @@ public sealed partial class LightingProvider : ILightingProvider, IDisposable
     private readonly FeatureGates _gates;
     private readonly SensorFeed? _sensorFeed;
 
-    public LightingProvider(IConfigStore store, LightingEngine engine, LightingOutputHub hub, GpuContext gpu, MediaLibrary media, IMonitorEnumerator monitors, IScreenFrameSource? frameSource = null, RgbBridge? rgb = null, IBeatsProvider? beats = null, FeatureGates? gates = null, Nexus.Service.Lighting.CustomEffects.CustomEffectStore? customEffects = null, MultiplexHub? panelHub = null, ScreenPreviewHub? previewHub = null, SensorFeed? sensorFeed = null)
+    public LightingProvider(IConfigStore store, LightingEngine engine, LightingOutputHub hub, GpuContext gpu, MediaLibrary media, IMonitorEnumerator monitors, IScreenFrameSource? frameSource = null, RgbBridge? rgb = null, IBeatsProvider? beats = null, FeatureGates? gates = null, Nexus.Service.Lighting.CustomEffects.CustomEffectStore? customEffects = null, MultiplexHub? panelHub = null, ScreenPreviewHub? previewHub = null, SensorFeed? sensorFeed = null, LightingLedHub? ledHub = null)
     {
         _panelHub = panelHub;
         _sensorFeed = sensorFeed;
@@ -116,6 +116,11 @@ public sealed partial class LightingProvider : ILightingProvider, IDisposable
 
         _engine.OnFrame += frame => _ = _hub.BroadcastBinaryAsync(frame);
         _engine.CanvasWatched = () => _hub.ClientCount > 0;
+        if (ledHub is not null)
+        {
+            _engine.OnLedFrame += frame => _ = ledHub.BroadcastBinaryAsync(frame);
+            _engine.LedsWatched = () => ledHub.ClientCount > 0;
+        }
         _engine.OnEffectChanged += ReconcileAudioCapture;
         // Any settings write can move a pinned effect's look, the pin set, or the mirrored screen.
         _store.OnChanged += RefreshPinnedLooks;

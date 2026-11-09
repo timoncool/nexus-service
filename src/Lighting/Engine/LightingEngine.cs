@@ -138,6 +138,19 @@ public sealed partial class LightingEngine : IDisposable
     private IEffect? _lastRenderEffect;
 
     public event Action<ReadOnlyMemory<byte>>? OnFrame;
+
+    /// <summary>
+    /// The frame's device sections under a 0x0 canvas header, at most every <see cref="LedFrameIntervalMs"/>:
+    /// what a client that only follows LED colours needs, without the canvas pixels. Each frame is its own array.
+    /// </summary>
+    public event Action<ReadOnlyMemory<byte>>? OnLedFrame;
+
+    /// <summary>True while a client reads <see cref="OnLedFrame"/>. Unset counts as no reader.</summary>
+    public Func<bool>? LedsWatched { get; set; }
+
+    internal long LedFrameIntervalMs { get; set; } = 100;
+    private long _lastLedFrameMs = long.MinValue / 2;
+
     public event Action? OnEffectChanged;
 
     /// <summary>Raised on the engine thread once per tick, after every device frame is published; handlers must not block.</summary>
@@ -2437,6 +2450,25 @@ public sealed partial class LightingEngine : IDisposable
             pos += dev.LedCount * 3;
         }
         OnFrame?.Invoke(new ReadOnlyMemory<byte>(_frameBuffer, 0, pos));
+        PublishLedFrame(buf, 5 + canvasBytes, pos);
+    }
+
+    private void PublishLedFrame(byte[] frame, int devicesStart, int end)
+    {
+        if (OnLedFrame is not { } publish || LedsWatched?.Invoke() != true)
+        {
+            return;
+        }
+        var now = Environment.TickCount64;
+        if (now - _lastLedFrameMs < LedFrameIntervalMs)
+        {
+            return;
+        }
+        _lastLedFrameMs = now;
+        var ledFrame = new byte[5 + end - devicesStart];
+        ledFrame[0] = 0x03;
+        Buffer.BlockCopy(frame, devicesStart, ledFrame, 5, end - devicesStart);
+        publish(ledFrame);
     }
 
     /// <summary>
