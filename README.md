@@ -93,6 +93,7 @@ All against Nexus of 5 November 2026 (`hello-nexus/nexus-service` `4bde382b`, `h
 - Lighting frame rate over radio and resend budget are settings, not constants in code
 - The rolling window rate and the late-pass budget can be lowered in settings: at half the rate about 40% of the air is freed for fan control; the defaults are the original's values
 - RF packet counter (System.Diagnostics.Metrics) with an on/off switch: packets a minute and peak per second on the dongle page and in the log
+- Picking the rate: switch the packet counter on and lower the lighting frame rate until a minute carries under about 11,000 packets (about 190 a second, which is what the Nexus author measured as landing; the rest is lost). Five chains with an effect of their own on every zone need 85 ticks instead of 53
 - Deaf receiver: only its handle is reopened, as in the original. Resetting the transmitter or cycling the receiver's port does not shorten a deaf spell and re-enumerates the dongle each time
 - LCD video mode is armed only once the device list is known; before, the dongle could go deaf at start
 - The effect's average colour (in linear light) is written to each chain's flash after an effect change; when the stream breaks the chain holds that colour instead of the firmware rainbow
