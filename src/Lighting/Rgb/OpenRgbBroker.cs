@@ -202,8 +202,8 @@ public sealed class OpenRgbBroker : BackgroundService
     }
 
     // The client's connection outlives the daemon's: a daemon that exits is restarted and joined again,
-    // and the client only sees its device list empty and fill back. A client let through while the
-    // daemon is still detecting hardware has crashed the daemon, so the link waits for the list to settle.
+    // and the client only sees its device list empty and fill back. A client that reads the list of a
+    // daemon still detecting hardware gets part of it and is not told of the rest, so the link waits for a fresh daemon to settle.
     private async Task KeepUpstreamAsync(Session s, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)

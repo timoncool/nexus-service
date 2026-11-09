@@ -148,7 +148,7 @@ public sealed partial class LightingEngine : IDisposable
     /// <summary>True while a client reads <see cref="OnLedFrame"/>. Unset counts as no reader.</summary>
     public Func<bool>? LedsWatched { get; set; }
 
-    internal long LedFrameIntervalMs { get; set; } = 100;
+    internal long LedFrameIntervalMs { get; set; } = 33;
     private long _lastLedFrameMs = long.MinValue / 2;
 
     public event Action? OnEffectChanged;
