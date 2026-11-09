@@ -15,12 +15,12 @@
 
 </div>
 
-Nexus Fast is a fork of [Nexus](https://github.com/hello-nexus/nexus) (service and web UI) that cuts CPU, GPU and radio load, lets Lian Li wireless controllers recover from dongle hangs on their own, lights fan and pump screens in the colour of their LEDs, and hands OpenRGB devices to other apps. Windows; installs over the official Nexus 3.1.9-beta.1 and rolls back with one command.
+Nexus Fast is a fork of [Nexus](https://github.com/hello-nexus/nexus) (service and web UI) that cuts CPU and GPU load, makes the Lian Li wireless radio tunable, brings a hung dongle transmitter back on its own, lights fan and pump screens in the colour of their LEDs, and hands OpenRGB devices to other apps. Windows; installs over the official Nexus 3.1.9-beta.1 and rolls back with one command.
 
 ## Features
 
-- **Lower load** — fan screens skip unchanged frames, lighting nobody reads is not rendered, 40% fewer radio packets
-- **Self-healing Lian Li dongle** — a deaf receiver or a hung transmitter is reset through the other half of the dongle, then only its own USB port is cycled, guarded against needless resets
+- **Lower load** — fan screens skip unchanged frames, lighting nobody reads is not rendered, radio frame rate and resends are adjustable
+- **A hung dongle transmitter recovers on its own** — it is reset through the receiver, then only its own USB port is cycled, guarded against needless resets; a deaf receiver is left alone and comes back by itself, with no USB reconnects
 - **Radio settings in the UI** — 2.4 GHz channel with its frequency, lighting frame rate over radio, resend budget, packet counter; the channel is saved
 - **No rainbow on dropouts** — each fan's flash holds the average colour of the current effect, so a lost link looks like a frozen colour
 - **Ambient Glow** — a screen design lit by its fan's own LED colour, with colour-wheel HUD colours, glass effects and blend modes
@@ -50,7 +50,7 @@ Measured on one PC (Ryzen 9 9950X3D, RTX 4090, Lian Li TL / TL LCD wireless, Hyd
 |---|---|---|
 | Screens (WebView), CPU | 0.356 cores | **0.157 cores** (−56%) |
 | Screens (WebView), GPU | 8.9% | **0.8%** (−91%) |
-| Radio packets to the dongle | 100% | **about 60%** (−40%) |
+| Radio packets to the dongle at half the window rate (a setting) | 100% | **about 60%** (−40%) |
 | Whole Nexus with screens, CPU | — | **1.4%** (32 threads) |
 
 Tip: set Settings → Lighting & Cooling → Rendering device to your discrete GPU. Lighting on an RTX 4090 costs 0.34% versus 6.6% on the Ryzen integrated graphics, and the 4090 stays idle.
@@ -92,9 +92,9 @@ All against Nexus of 5 November 2026 (`hello-nexus/nexus-service` `4bde382b`, `h
 **Lian Li wireless (L-Wireless)**
 - 2.4 GHz channel picked in the UI (each shown with its frequency); the dongle and every bound chain move to it, and the choice survives a restart
 - Lighting frame rate over radio and resend budget are settings, not constants in code
-- Rolling lighting windows go out half as often and late passes are trimmed: about 40% of the air is freed for fan control
+- The rolling window rate and the late-pass budget can be lowered in settings: at half the rate about 40% of the air is freed for fan control; the defaults are the original's values
 - RF packet counter (System.Diagnostics.Metrics) with an on/off switch: packets a minute and peak per second on the dongle page and in the log
-- Deaf receiver: the transmitter is reset through the receiver (as in lian-li-linux), then the receiver's own USB port is cycled
+- Deaf receiver: only its handle is reopened, as in the original. Resetting the transmitter or cycling the receiver's port does not shorten a deaf spell and re-enumerates the dongle each time
 - Hung transmitter: resets through the receiver, then its USB port is cycled; at most once in 10 minutes and 3 times a day, only with the display on and not right after sleep
 - LCD video mode is armed only once the device list is known; before, the dongle could go deaf at start
 - The effect's average colour (in linear light) is written to each chain's flash after an effect change; when the stream breaks the chain holds that colour instead of the firmware rainbow

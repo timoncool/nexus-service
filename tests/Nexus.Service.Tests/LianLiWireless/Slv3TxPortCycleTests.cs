@@ -107,16 +107,15 @@ public partial class Slv3HubTests
     }
 
     [Fact]
-    public void An_rx_deaf_through_tx_resets_gets_the_tx_port_cycled()
+    public void A_deaf_rx_is_only_reopened_never_reset_through_or_port_cycled()
     {
         var (hub, clock, rx, cycler) = DeafRxHub();
         rx.BusyReads = true;
 
-        BusyMinutes(hub, clock, 1);
-        Assert.Empty(cycler.Cycled);
+        BusyMinutes(hub, clock, 30);
 
-        BusyMinutes(hub, clock, 4);
-        Assert.Single(cycler.Cycled);
+        Assert.Empty(cycler.Cycled);
+        Assert.DoesNotContain(rx.SentFrames, f => f.Length >= 1 && f[0] == Slv3Protocol.UsbResetAnother);
     }
 
     [Fact]

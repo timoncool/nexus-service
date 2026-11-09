@@ -249,18 +249,11 @@ public sealed partial class Slv3Hub : IDisposable
     // A reply opening with 0 is the RX's "no device list this cycle". It does
     // this on its own every ~17 s for a few seconds and recovers without help,
     // so only a busy spell this long is treated as a wedge. A busy RX answers
-    // over USB but hears no device, and a fresh handle leaves it deaf for many
-    // minutes while a replug cures it at once. So a wedge first gets a fresh RX
-    // handle, then, like lian-li-linux on RX poll errors, a reset of the TX
-    // through the RX (the vendor opcode restarts the other dongle), and when
-    // that is ignored too, the guarded TX port cycle. Spells that heal on their
-    // own end within two busy runs and never reach the TX reset.
+    // over USB but hears no device; a longer deaf spell also ends on its own
+    // within minutes, and neither a TX reset through the RX nor a cycle of the
+    // RX port shortens it, while both re-enumerate a dongle. So a wedge only
+    // gets a fresh RX handle and the TX keeps driving the chains meanwhile.
     private const int RxBusyPollsBeforeReset = 60;
-    private const int RxBusyReopensBeforeTxReset = 1;
-    internal const int RxWedgeTxResetsBeforePortCycle = 2;
-    internal const long RxWedgeMinMsBeforePortCycle = 120_000;
-    private int _rxWedgeTxResets;
-    private long _rxWedgeSinceMs;
     private int _rxBusyStreak;
     private byte[]? _firstBusyReply;
 
@@ -829,27 +822,6 @@ public sealed partial class Slv3Hub : IDisposable
         }
     }
 
-    // An RX that stays deaf through TX resets gets its own port cycled under the guards a hung
-    // TX has: a cycled TX left the RX deaf, a replug that re-enumerated the RX cured it.
-    private void ConsiderRxWedgePortCycleLocked(long nowMs)
-    {
-        var cycler = TxPortCycler;
-        if (cycler is null || _disposed
-            || _rxWedgeTxResets < RxWedgeTxResetsBeforePortCycle
-            || nowMs - _rxWedgeSinceMs < RxWedgeMinMsBeforePortCycle
-            || nowMs < _nextPortCycleMs
-            || Volatile.Read(ref _portCycleInFlight) != 0
-            || FindPortLocked(Slv3DongleRole.Rx) is not { } rxPort)
-        {
-            return;
-        }
-        if (StartTxPortCycleLocked(cycler, rxPort, nowMs, _rxWedgeTxResets, (nowMs - _rxWedgeSinceMs) / 60_000))
-        {
-            _rxWedgeTxResets = 0;
-            _rxWedgeSinceMs = 0;
-        }
-    }
-
     private bool StartTxPortCycleLocked(ISlv3TxPortCycler cycler, Slv3PortInfo txPort, long nowMs, int resets, long hungMinutes)
     {
         var hold = PortCycleHoldReason(nowMs);
@@ -906,10 +878,7 @@ public sealed partial class Slv3Hub : IDisposable
                 slot = _portCycleTimesMs.Count;
             }
             Interlocked.Increment(ref _portCycles);
-            var why = txPort.Role == Slv3DongleRole.Rx
-                ? $"RX stayed deaf through {resets} TX reset(s) over {hungMinutes} min"
-                : $"TX ignored {resets} RX reset(s) over {hungMinutes} min";
-            ServiceLog.Warn($"[lianli-wireless] {why}, cycling its USB port {target} ({slot}/{MaxPortCyclesPerWindow} today)");
+            ServiceLog.Warn($"[lianli-wireless] TX ignored {resets} RX reset(s) over {hungMinutes} min, cycling its USB port {target} ({slot}/{MaxPortCyclesPerWindow} today)");
             var ok = cycler.TryCycle(instanceId, out var detail);
             ServiceLog.Warn($"[lianli-wireless] {txPort.Role} port cycle {(ok ? "done" : "failed")}: {detail}");
         }
@@ -2277,16 +2246,14 @@ public sealed partial class Slv3Hub : IDisposable
         {
             return HandleGetDevFailureLocked();
         }
-        if (_rxWedgeTxResets > 0)
+        if (_rxRecoveries > 0)
         {
-            ServiceLog.Info($"[lianli-wireless] RX hears devices again after {_rxWedgeTxResets} TX reset(s) over {(_nowMs() - _rxWedgeSinceMs) / 1000} s");
+            ServiceLog.Info($"[lianli-wireless] RX hears devices again after {_rxRecoveries} reopen(s)");
         }
         _rxFailStreak = 0;
         _rxBusyStreak = 0;
         _rxRecoveries = 0;
         _nextRxRecoveryMs = 0;
-        _rxWedgeTxResets = 0;
-        _rxWedgeSinceMs = 0;
         if (State.LinkStatus == Slv3LinkStatus.Recovering && _tx is { IsOpen: true })
         {
             State.LinkStatus = Slv3LinkStatus.Ok;
@@ -2525,16 +2492,6 @@ public sealed partial class Slv3Hub : IDisposable
         }
         var first = _firstBusyReply is { } b ? Convert.ToHexString(b, 0, Math.Min(b.Length, Slv3Protocol.UsbPacketSize)) : "";
         var reason = $"{RxBusyPollsBeforeReset} consecutive busy GetDev replies (first {first})";
-        var nowMs = _nowMs();
-        if (_rxRecoveries >= RxBusyReopensBeforeTxReset && nowMs >= _nextRxRecoveryMs)
-        {
-            if (_rxWedgeTxResets++ == 0)
-            {
-                _rxWedgeSinceMs = nowMs;
-            }
-            ResetTxViaRxLocked(nowMs, $"RX deaf: {reason}");
-            ConsiderRxWedgePortCycleLocked(nowMs);
-        }
         return BeginRxRecoveryLocked(reason, resetViaTx: false);
     }
 
