@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -31,6 +32,16 @@ public class OpenRgbBrokerTests
     {
         private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
         public ConcurrentQueue<(uint Dev, OpenRgbProtocol.PacketId Packet)> Received { get; } = new();
+        private readonly ConcurrentBag<TcpClient> _clients = new();
+
+        /// <summary>Closes every connection, as a daemon that exits does.</summary>
+        public void DropClients()
+        {
+            while (_clients.TryTake(out var c))
+            {
+                c.Close();
+            }
+        }
         public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
 
         public FakeDaemon()
@@ -46,6 +57,7 @@ public class OpenRgbBrokerTests
                 TcpClient c;
                 try { c = await _listener.AcceptTcpClientAsync(); }
                 catch { return; }
+                _clients.Add(c);
                 _ = Task.Run(() => ServeAsync(c));
             }
         }
@@ -176,6 +188,49 @@ public class OpenRgbBrokerTests
 
         await WaitUntilAsync(() => !leases.Active.Contains("openrgb-s-mouse"));
         Assert.Contains("Aurora (RGB.NET)", leases.KnownClients);
+        cts.Cancel();
+        await broker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task A_client_stays_connected_when_the_daemon_drops_and_gets_its_devices_back()
+    {
+        var store = new MemoryStore();
+        var leases = new OpenRgbLeases(store);
+        var devices = new List<RgbDevice> { new() { Index = 3, Name = "Mouse", Serial = "mouse" } };
+        leases.SetOwner("openrgb-s-mouse", "Aurora (RGB.NET)");
+        using var daemon = new FakeDaemon();
+        var listenPort = FreePort();
+        var broker = new OpenRgbBroker(leases, () => devices, daemon.Port, listenPort, enabled: true);
+        using var cts = new CancellationTokenSource();
+        await broker.StartAsync(cts.Token);
+        await broker.Listening.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, listenPort);
+        var s = client.GetStream();
+        await WriteAsync(s, 0, OpenRgbProtocol.PacketId.RequestProtocolVersion, OpenRgbProtocol.BuildProtocolVersionBody(6));
+        Assert.Equal(OpenRgbProtocol.PacketId.RequestProtocolVersion, (await ReadAsync(s)).Packet);
+        await WriteAsync(s, 0, OpenRgbProtocol.PacketId.SetClientName, OpenRgbProtocol.BuildSetClientNameBody("Aurora (RGB.NET)"));
+        await WriteAsync(s, 0, OpenRgbProtocol.PacketId.RequestControllerCount, Array.Empty<byte>());
+        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian((await ReadAsync(s)).Body));
+        await WaitUntilAsync(() => daemon.Received.Count >= 2);
+
+        daemon.Received.Clear();
+        daemon.DropClients();
+
+        Assert.Equal(OpenRgbProtocol.PacketId.DeviceListUpdated, (await ReadAsync(s)).Packet);
+        Assert.Equal(OpenRgbProtocol.PacketId.DeviceListUpdated, (await ReadAsync(s)).Packet);
+        await WriteAsync(s, 0, OpenRgbProtocol.PacketId.RequestControllerCount, Array.Empty<byte>());
+        Assert.Equal(1u, BinaryPrimitives.ReadUInt32LittleEndian((await ReadAsync(s)).Body));
+        await WriteAsync(s, 0, OpenRgbProtocol.PacketId.RgbControllerUpdateLeds, new byte[] { 1, 2, 3 });
+        await WaitUntilAsync(() => daemon.Received.Any(p => p.Packet == OpenRgbProtocol.PacketId.RgbControllerUpdateLeds && p.Dev == 3));
+
+        var rejoined = daemon.Received.ToArray();
+        Assert.Contains(rejoined, p => p.Packet == OpenRgbProtocol.PacketId.RequestProtocolVersion);
+        Assert.Contains(rejoined, p => p.Packet == OpenRgbProtocol.PacketId.SetClientName);
+        Assert.Contains("openrgb-s-mouse", leases.Active);
+
         cts.Cancel();
         await broker.StopAsync(CancellationToken.None);
     }

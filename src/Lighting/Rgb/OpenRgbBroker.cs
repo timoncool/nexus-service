@@ -39,6 +39,7 @@ public sealed class OpenRgbBroker : BackgroundService
             store.Load().Devices.OpenRgbBroker && proc.DaemonPort != OpenRgbProcessManager.DefaultPort)
     {
         _proc = proc;
+        SettleFor = TimeSpan.FromSeconds(6);
     }
 
     // The daemon the clients proxy to. A client (Aurora) may connect while Nexus has the daemon
@@ -155,23 +156,32 @@ public sealed class OpenRgbBroker : BackgroundService
         }
     }
 
+    /// <summary>How long a freshly started daemon is left alone before a client is let through to it; zero skips the wait.</summary>
+    internal TimeSpan SettleFor { get; set; } = TimeSpan.Zero;
+
+    private static readonly TimeSpan SettleCap = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan UpstreamRetry = TimeSpan.FromMilliseconds(500);
+    // A client reads its list right after connecting; the daemon link of a running daemon is up within this.
+    private static readonly TimeSpan AttachWait = TimeSpan.FromMilliseconds(800);
+
+    // What the daemon last answered a version request with; a client that connects while the daemon is down is answered from it.
+    private uint _serverVersion;
+
     private async Task RunSessionAsync(long id, TcpClient client, CancellationToken ct)
     {
         using var clientConn = client;
         using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        TcpClient? upstream = null;
         Session? session = null;
         try
         {
-            upstream = await ConnectUpstreamAsync(sessionCts.Token).ConfigureAwait(false);
-            session = new Session(clientConn.GetStream(), upstream.GetStream());
+            session = new Session(clientConn.GetStream());
             lock (_gate)
             {
                 _sessions[id] = session;
             }
-            var down = PumpUpstreamAsync(session, sessionCts.Token);
+            var link = KeepUpstreamAsync(session, sessionCts.Token);
             var up = PumpClientAsync(id, session, sessionCts.Token);
-            await Task.WhenAny(down, up).ConfigureAwait(false);
+            await Task.WhenAny(link, up).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or InvalidOperationException)
         {
@@ -188,7 +198,72 @@ public sealed class OpenRgbBroker : BackgroundService
                 ServiceLog.Info($"[openrgb-broker] '{name}' disconnected");
                 _leases.ClientDisconnected(id);
             }
-            upstream?.Dispose();
+        }
+    }
+
+    // The client's connection outlives the daemon's: a daemon that exits is restarted and joined again,
+    // and the client only sees its device list empty and fill back. A client let through while the
+    // daemon is still detecting hardware has crashed the daemon, so the link waits for the list to settle.
+    private async Task KeepUpstreamAsync(Session s, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            TcpClient? upstream = null;
+            try
+            {
+                upstream = await ConnectUpstreamAsync(ct).ConfigureAwait(false);
+                await WaitDaemonSettledAsync(ct).ConfigureAwait(false);
+                var stream = upstream.GetStream();
+                var (askVersion, name, flags, enumerated) = s.Attach(stream);
+                if (askVersion)
+                {
+                    await s.SendUpstreamAsync(0, OpenRgbProtocol.PacketId.RequestProtocolVersion, OpenRgbProtocol.BuildProtocolVersionBody(s.ClientVersion), ct).ConfigureAwait(false);
+                }
+                if (name is not null)
+                {
+                    await s.SendUpstreamAsync(0, OpenRgbProtocol.PacketId.SetClientName, Encoding.UTF8.GetBytes(name + "\0"), ct).ConfigureAwait(false);
+                }
+                if (flags is not null)
+                {
+                    await s.SendUpstreamAsync(0, OpenRgbProtocol.PacketId.SetClientFlags, flags, ct).ConfigureAwait(false);
+                }
+                if (enumerated)
+                {
+                    await s.SendToClientAsync(0, OpenRgbProtocol.PacketId.DeviceListUpdated, ReadOnlyMemory<byte>.Empty).ConfigureAwait(false);
+                }
+                await PumpUpstreamAsync(s, stream, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or SocketException or InvalidOperationException && !ct.IsCancellationRequested)
+            {
+            }
+            finally
+            {
+                upstream?.Dispose();
+            }
+            if (s.Detach())
+            {
+                ServiceLog.Info($"[openrgb-broker] daemon link of '{s.Name}' lost; rejoining");
+                await s.SendToClientAsync(0, OpenRgbProtocol.PacketId.DeviceListUpdated, ReadOnlyMemory<byte>.Empty).ConfigureAwait(false);
+            }
+            await Task.Delay(UpstreamRetry, ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task WaitDaemonSettledAsync(CancellationToken ct)
+    {
+        if (_proc is null || SettleFor <= TimeSpan.Zero)
+        {
+            return;
+        }
+        var started = Environment.TickCount64;
+        while (Environment.TickCount64 - started < SettleCap.TotalMilliseconds)
+        {
+            var up = _proc.Uptime;
+            if (up >= SettleFor)
+            {
+                return;
+            }
+            await Task.Delay(up > TimeSpan.Zero ? SettleFor - up : UpstreamRetry, ct).ConfigureAwait(false);
         }
     }
 
@@ -212,8 +287,15 @@ public sealed class OpenRgbBroker : BackgroundService
                 case OpenRgbProtocol.PacketId.RequestProtocolVersion:
                 {
                     var asked = body.Length >= 4 ? BinaryPrimitives.ReadUInt32LittleEndian(body) : 0;
-                    s.ClientVersion = Math.Min(asked, MaxProtocolVersion);
-                    await s.SendUpstreamAsync(dev, packet, OpenRgbProtocol.BuildProtocolVersionBody(s.ClientVersion), ct).ConfigureAwait(false);
+                    var version = Math.Min(asked, MaxProtocolVersion);
+                    if (s.AskVersion(version, _serverVersion != 0))
+                    {
+                        await s.SendUpstreamAsync(dev, packet, OpenRgbProtocol.BuildProtocolVersionBody(version), ct).ConfigureAwait(false);
+                    }
+                    else if (_serverVersion != 0)
+                    {
+                        await s.SendToClientAsync(0, packet, OpenRgbProtocol.BuildProtocolVersionBody(Math.Min(_serverVersion, MaxProtocolVersion))).ConfigureAwait(false);
+                    }
                     break;
                 }
                 case OpenRgbProtocol.PacketId.SetClientName:
@@ -230,13 +312,15 @@ public sealed class OpenRgbBroker : BackgroundService
                 }
                 case OpenRgbProtocol.PacketId.RequestControllerCount:
                 {
-                    s.SetView(_leases.ViewFor(s.Name ?? "", _devices()));
+                    await s.WaitAttachedAsync(AttachWait, ct).ConfigureAwait(false);
+                    s.Enumerate(_leases.ViewFor(s.Name ?? "", _devices()));
                     var reply = new byte[4];
                     BinaryPrimitives.WriteUInt32LittleEndian(reply, (uint)s.ViewCount);
                     await s.SendToClientAsync(0, packet, reply).ConfigureAwait(false);
                     break;
                 }
                 case OpenRgbProtocol.PacketId.SetClientFlags:
+                    s.Flags = body;
                     await s.SendUpstreamAsync(dev, packet, body, ct).ConfigureAwait(false);
                     break;
                 default:
@@ -250,25 +334,29 @@ public sealed class OpenRgbBroker : BackgroundService
     }
 
     /// <summary>Daemon to client: replies and notices go back with the device index translated to the client's view.</summary>
-    private static async Task PumpUpstreamAsync(Session s, CancellationToken ct)
+    private async Task PumpUpstreamAsync(Session s, Stream upstream, CancellationToken ct)
     {
         var header = new byte[OpenRgbProtocol.HeaderSize];
         while (!ct.IsCancellationRequested)
         {
-            await s.Upstream.ReadExactlyAsync(header, ct).ConfigureAwait(false);
+            await upstream.ReadExactlyAsync(header, ct).ConfigureAwait(false);
             var (dev, packet, size) = OpenRgbProtocol.ReadHeader(header);
             if (size > MaxPacketBytes)
             {
                 throw new InvalidOperationException("oversized packet");
             }
             var body = new byte[size];
-            await s.Upstream.ReadExactlyAsync(body, ct).ConfigureAwait(false);
+            await upstream.ReadExactlyAsync(body, ct).ConfigureAwait(false);
 
             if (packet == OpenRgbProtocol.PacketId.RequestProtocolVersion && body.Length >= 4)
             {
                 var server = BinaryPrimitives.ReadUInt32LittleEndian(body);
-                BinaryPrimitives.WriteUInt32LittleEndian(body, Math.Min(server, MaxProtocolVersion));
-                await s.SendToClientAsync(dev, packet, body).ConfigureAwait(false);
+                _serverVersion = server;
+                if (s.TakeVersionAnswer())
+                {
+                    BinaryPrimitives.WriteUInt32LittleEndian(body, Math.Min(server, MaxProtocolVersion));
+                    await s.SendToClientAsync(dev, packet, body).ConfigureAwait(false);
+                }
             }
             else if (IsDeviceScoped(packet))
             {
@@ -293,26 +381,106 @@ public sealed class OpenRgbBroker : BackgroundService
         private readonly SemaphoreSlim _upstreamWrite = new(1, 1);
         private volatile int[] _view = Array.Empty<int>();
 
-        public Session(Stream client, Stream upstream)
+        private readonly object _sync = new();
+        private Stream? _upstream;
+        private bool _versionAsked;
+        private bool _versionOwed;
+        private bool _enumerated;
+        private TaskCompletionSource _attached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Session(Stream client)
         {
             Client = client;
-            Upstream = upstream;
         }
 
         public Stream Client { get; }
-        public Stream Upstream { get; }
         public string? Name { get; set; }
-        public uint ClientVersion { get; set; }
+        public byte[]? Flags { get; set; }
+        public uint ClientVersion { get; private set; }
         public int ViewCount => _view.Length;
 
-        public void SetView(IReadOnlyList<RgbDevice> devices)
+        /// <summary>The daemon is joined: what of the client's handshake has to be repeated to it.</summary>
+        public (bool AskVersion, string? Name, byte[]? Flags, bool Enumerated) Attach(Stream upstream)
         {
-            var view = new int[devices.Count];
-            for (var i = 0; i < view.Length; i++)
+            lock (_sync)
             {
-                view[i] = devices[i].Index;
+                _upstream = upstream;
+                _attached.TrySetResult();
+                return (_versionAsked, Name, Flags, _enumerated);
             }
-            _view = view;
+        }
+
+        /// <summary>The daemon is gone; true when the client had a list it must read again.</summary>
+        public bool Detach()
+        {
+            lock (_sync)
+            {
+                var had = _upstream is not null;
+                _upstream = null;
+                if (had)
+                {
+                    _attached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                }
+                _view = Array.Empty<int>();
+                return had && _enumerated;
+            }
+        }
+
+        /// <summary>Waits for the daemon link, no longer than <paramref name="limit"/>.</summary>
+        public async Task WaitAttachedAsync(TimeSpan limit, CancellationToken ct)
+        {
+            Task attached;
+            lock (_sync)
+            {
+                attached = _attached.Task;
+            }
+            if (!attached.IsCompleted)
+            {
+                await Task.WhenAny(attached, Task.Delay(limit, ct)).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>The client asked for the protocol version; true when the daemon is there to answer it.</summary>
+        public bool AskVersion(uint version, bool answerKnown)
+        {
+            lock (_sync)
+            {
+                ClientVersion = version;
+                _versionAsked = true;
+                _versionOwed = _upstream is not null || !answerKnown;
+                return _upstream is not null;
+            }
+        }
+
+        /// <summary>A version answer from the daemon; true when the client still waits for one.</summary>
+        public bool TakeVersionAnswer()
+        {
+            lock (_sync)
+            {
+                var owed = _versionOwed;
+                _versionOwed = false;
+                return owed;
+            }
+        }
+
+        /// <summary>The client reads its device list: the leased devices while the daemon is joined, none otherwise.</summary>
+        public void Enumerate(IReadOnlyList<RgbDevice> devices)
+        {
+            lock (_sync)
+            {
+                _enumerated = true;
+                if (_upstream is null)
+                {
+                    _view = Array.Empty<int>();
+                    return;
+                }
+                var view = new int[devices.Count];
+                for (var i = 0; i < view.Length; i++)
+                {
+                    view[i] = devices[i].Index;
+                }
+                _view = view;
+            }
         }
 
         public bool TryUpstreamIndex(uint viewIndex, out uint upstreamIndex)
@@ -337,8 +505,16 @@ public sealed class OpenRgbBroker : BackgroundService
             return false;
         }
 
-        public Task SendUpstreamAsync(uint dev, OpenRgbProtocol.PacketId packet, ReadOnlyMemory<byte> body, CancellationToken ct) =>
-            SendAsync(Upstream, _upstreamWrite, dev, packet, body, ct);
+        /// <summary>Sends to the daemon; a packet for a daemon that is not joined is dropped.</summary>
+        public Task SendUpstreamAsync(uint dev, OpenRgbProtocol.PacketId packet, ReadOnlyMemory<byte> body, CancellationToken ct)
+        {
+            Stream? upstream;
+            lock (_sync)
+            {
+                upstream = _upstream;
+            }
+            return upstream is null ? Task.CompletedTask : SendAsync(upstream, _upstreamWrite, dev, packet, body, ct);
+        }
 
         public Task SendToClientAsync(uint dev, OpenRgbProtocol.PacketId packet, ReadOnlyMemory<byte> body) =>
             SendAsync(Client, _clientWrite, dev, packet, body, CancellationToken.None);
