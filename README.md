@@ -27,7 +27,7 @@ Nexus Fast is a fork of [Nexus](https://github.com/hello-nexus/nexus) (service a
 - **Sensor rotation and layout editor** — a screen shows sensors in turn; drag, resize and rotate parts of the gauge
 - **OpenRGB device hand-off** — Nexus answers the OpenRGB SDK port and gives a chosen device to another app (Aurora, SignalRGB…); each app sees only its own
 - **Heat tints the lighting** — the warmer the CPU or GPU, the further every effect shifts toward red; pattern and motion stay, and the mode survives an effect change
-- **Aurora in the PC's colours** — Nexus hands Aurora the main colours of the current lighting, so the keyboard and mouse background flows in them while every Aurora effect keeps working
+- **Lighting colours for Aurora** (off by default) — Nexus can hand Aurora the main colours of the current lighting; a profile layer bound to them paints the keyboard and mouse to match the PC
 - **Select-all lock** — keep a lighting card out of Select all
 
 ## Works with Aurora
