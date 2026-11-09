@@ -143,15 +143,26 @@ vec3 tonemap(vec3 c) {
 // composed source whose body defines none, since a defined gainOut() may not
 // call an undefined function on every GLSL ES compiler.
 float outGain();
-// u_heat is the service's heat tint, 0 on a cool PC: a warm one pulls the output toward red and keeps
-// each pixel's brightness, so the pattern and its motion stay.
+// u_heat is the service's heat tint, 0 on a cool PC: a warm one turns every pixel's hue toward red by
+// that share of the way round the wheel. Saturation and brightness are untouched, so white stays white
+// and the effect keeps its pattern, motion and contrast.
 uniform float u_heat;
 vec3 gained(vec3 c) {
     return clamp(c * outGain(), 0.0, 1.0);
 }
 vec3 gainOut(vec3 c) {
     vec3 o = gained(c);
-    return mix(o, max(o.r, max(o.g, o.b)) * vec3(1.0, 0.05, 0.02), clamp(u_heat, 0.0, 1.0));
+    float k = clamp(u_heat, 0.0, 1.0);
+    float hi = max(o.r, max(o.g, o.b));
+    float d = hi - min(o.r, min(o.g, o.b));
+    if (k <= 0.0 || d <= 0.0) {
+        return o;
+    }
+    float h = hi == o.r ? (o.g - o.b) / d : hi == o.g ? (o.b - o.r) / d + 2.0 : (o.r - o.g) / d + 4.0;
+    h = fract(h / 6.0);
+    // Red sits at 0 and at 1: each hue takes the shorter way there.
+    h = mix(h, h > 0.5 ? 1.0 : 0.0, k);
+    return hsv2rgb(vec3(h, d / hi, hi));
 }
 
 // Post-process every effect's output: blend from palette-shifted colour

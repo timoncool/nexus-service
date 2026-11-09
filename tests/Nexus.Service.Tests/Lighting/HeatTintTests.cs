@@ -51,6 +51,7 @@ public class HeatTintTests
     {
         var source = ShaderLibrary.Get("kaleidoscope");
         Assert.Contains("uniform float u_heat;", source);
-        Assert.Contains("clamp(u_heat, 0.0, 1.0)", source);
+        Assert.Contains("float k = clamp(u_heat, 0.0, 1.0);", source);
+        Assert.Contains("h = mix(h, h > 0.5 ? 1.0 : 0.0, k);", source);
     }
 }
