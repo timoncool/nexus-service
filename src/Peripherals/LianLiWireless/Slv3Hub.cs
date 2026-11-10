@@ -1708,7 +1708,8 @@ public sealed partial class Slv3Hub : IDisposable
     // the bind/PWM frame only when a port's reported duty byte is more than
     // PwmDriftThreshold from its target. The chain echoes the tuple it was
     // last given, so a changed target converges after one frame and a settled
-    // chain gets nothing. A chain still being bound or unbound is left to the
+    // chain gets nothing, except through an RX-blind spell, where every driven
+    // chain is repeated on the unconfirmed cadence. A chain still being bound or unbound is left to the
     // control pass. L-Connect skips a chain that enumerates no fans; here such
     // a chain is still driven once the user sets a port duty on it (the cooling
     // provider exposes its ports), and left alone on the mobo-sync default.
@@ -1733,7 +1734,10 @@ public sealed partial class Slv3Hub : IDisposable
                 continue;
             }
             var pwm = Slv3Protocol.BuildPwmTuple(targets, record.FanCount, record.Family);
-            if (!Slv3Protocol.NeedSyncPwm(record.Pwm, pwm))
+            // While the RX is blind the record is the last one heard: a chain that fell back to the
+            // motherboard header since then still reads as settled, so its target is repeated.
+            var unverified = _blindSinceMs is not null && HasManualTarget(targets);
+            if (!unverified && !Slv3Protocol.NeedSyncPwm(record.Pwm, pwm))
             {
                 _unconfirmedPwm.Remove(key);
                 continue;

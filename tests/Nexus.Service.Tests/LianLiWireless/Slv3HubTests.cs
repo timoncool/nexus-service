@@ -2349,6 +2349,39 @@ public partial class Slv3HubTests
     }
 
     [Fact]
+    public void A_busy_spell_repeats_a_settled_pwm_target_so_a_chain_that_fell_back_is_driven_again()
+    {
+        var clock = new ManualClock();
+        var (hub, net, tx, rx) = CreateConnectedHub(clock.NowMs);
+        net.Fans.Add(new SimulatedFan { Mac = FanMac, MasterMac = net.MasterMac, RxType = 1 });
+        Assert.True(hub.DriveTick());
+        Assert.True(hub.SetPortDuty(Convert.ToHexString(FanMac), 0, 50));
+        Ticks(hub, 3);
+        tx.SentFrames.Clear();
+        Ticks(hub, 3);
+        Assert.Equal(0, CountBindFrames(tx));
+
+        rx.BusyReads = true;
+        Assert.True(hub.DriveTick());
+        Assert.Equal(1, CountBindFrames(tx));
+        for (var i = 0; i < 4; i++)
+        {
+            clock.AdvanceMs(1_000);
+            Assert.True(hub.DriveTick());
+        }
+        Assert.Equal(1, CountBindFrames(tx));
+        clock.AdvanceMs(2_000);
+        Assert.True(hub.DriveTick());
+        Assert.Equal(2, CountBindFrames(tx));
+
+        rx.BusyReads = false;
+        Ticks(hub, 3);
+        tx.SentFrames.Clear();
+        Ticks(hub, 3);
+        Assert.Equal(0, CountBindFrames(tx));
+    }
+
+    [Fact]
     public void A_chain_unseen_through_a_busy_spell_is_reported_stale()
     {
         var clock = new ManualClock();
